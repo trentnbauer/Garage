@@ -1,0 +1,55 @@
+name: Publish Garage demo
+
+on:
+  workflow_dispatch:
+  # After each main push has been versioned, so the demo is stamped with the tag just made.
+  workflow_run:
+    workflows: [Create Version and Docker Container]
+    types: [completed]
+    branches: [main]
+  schedule:
+    # 07:00 AEDT (UTC+11) every day. This is 06:00 during AEST.
+    - cron: '0 20 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: demo-pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Find the release the demo is built from
+        run: echo "VITE_DEMO_VERSION=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - name: Build production UI with read-only demo data
+        run: npx vite build --config vite.demo.config.ts
+        working-directory: web
+      - name: Serve the demo at the Pages root
+        run: |
+          mv web/dist-demo/demo.html web/dist-demo/index.html
+          cp web/dist-demo/index.html web/dist-demo/404.html
+          touch web/dist-demo/.nojekyll
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: web/dist-demo
+      - id: deployment
+        uses: actions/deploy-pages@v5
