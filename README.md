@@ -1,2 +1,39 @@
-# garage
-garage
+# Garage
+
+A self-hosted logbook for project and daily cars: service history, fill-ups, reminders, a build board, parts and paperwork, shared with whoever works on the cars with you.
+
+**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home and the car Overview, on a Node + SQLite server. The other car sections, dialogs, Settings and Admin settings are still to come. Their buttons are already in place and say so when clicked.
+
+## Run it
+
+```bash
+docker run -d --name garage -p 3000:3000 -v garage-data:/data ghcr.io/trentnbauer/garage:latest
+```
+
+Then open http://localhost:3000. On first run Garage starts with a sample garage, and the admin profile **You** asks you to create a PIN.
+
+Everything lives in `/data`: `garage.db` (SQLite). Back up that volume.
+
+| Variable | Default | |
+|---|---|---|
+| `PORT` | `3000` | |
+| `DATA_DIR` | `/data` | Where `garage.db` is kept |
+
+## Develop
+
+Needs Node 22.13 or later (the server uses the built-in `node:sqlite`).
+
+```bash
+cd web && npm ci && npm run build   # build the app the server serves
+cd ../server && npm start           # http://localhost:3000, data in ./data
+```
+
+For live reload, run `npm run dev` in `web/` as well. Vite proxies `/api` to the server on port 3000.
+
+Tests: `npm test` in `web/` checks the logic against the design's figures, and `npm test` in `server/` checks sign-in and saving.
+
+The public demo (`npx vite build --config vite.demo.config.ts`) runs the same app with the sample data in memory and saves nothing.
+
+## Versions and releases
+
+Every pull request needs exactly one label: `release: fix`, `release: minor`, `release: major` or `release: none`. When it merges into `main`, that label sets the next version (see `.github/scripts/next-version.sh`). A tag and GitHub release are created, and the Docker image is published to `ghcr.io/trentnbauer/garage`. `release: none` publishes nothing.
