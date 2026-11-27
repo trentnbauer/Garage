@@ -1,4 +1,4 @@
-# Garage: web app built with Vite, served with its API by a dependency-free Node server.
+# Garage: web app built with Vite, served with its API by a small Node server.
 FROM node:22-alpine AS web
 WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
@@ -10,6 +10,8 @@ FROM node:22-alpine
 ARG VERSION=dev
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data STATIC_DIR=/app/web/dist GARAGE_VERSION=$VERSION
 WORKDIR /app
+COPY server/package.json server/package-lock.json ./server/
+RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
 COPY --from=web /app/web/dist ./web/dist
 RUN mkdir -p /data && chown node:node /data
