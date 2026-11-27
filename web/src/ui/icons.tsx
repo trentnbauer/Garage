@@ -26,6 +26,15 @@ const P: Record<string, string[]> = {
   book: ['M12 7v14', 'M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'],
   gauge: ['m12 14 4-4', 'M3.34 19a10 10 0 1 1 17.32 0'],
   grid: [],
+  x: ['M18 6 6 18', 'm6 6 12 12'],
+  trash: ['M3 6h18', 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6', 'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'],
+  pencil: ['M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z', 'm15 5 4 4'],
+  clipboard: ['M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2', 'm9 14 2 2 4-4'],
+  totop: ['M5 3h14', 'm18 13-6-6-6 6', 'M12 7v14'],
+  camera: ['M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'],
+  chat: ['M7.9 20A9 9 0 1 0 4 16.1L2 22Z'],
+  clip: ['m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551'],
+  archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
 };
 // Shapes that aren't single paths.
 const EXTRA: Record<string, JSX.Element> = {
@@ -36,6 +45,8 @@ const EXTRA: Record<string, JSX.Element> = {
   car: <><circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" /></>,
   image: <><rect width="18" height="18" x="3" y="3" rx="2" /><circle cx="9" cy="9" r="2" /></>,
   notes: <rect width="16" height="20" x="4" y="2" rx="2" />,
+  clipboard: <rect width="8" height="4" x="8" y="2" rx="1" />,
+  camera: <circle cx="12" cy="13" r="3" />,
   grid: <><rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" /><rect width="7" height="9" x="14" y="12" rx="1" /><rect width="7" height="5" x="3" y="16" rx="1" /></>,
 };
 

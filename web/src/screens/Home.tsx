@@ -62,7 +62,7 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
                   </span>
                   {lim && (
                     <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 2, display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', background: DRIVE[lim.drive!].color, color: '#140f05', fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '.02em' }}>
-                      <Icon n="alert" w={2.4} /><span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lim.drive} only</span>
+                      <Icon n="alert" w={2.4} style={{ flex: 'none' }} /><span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{lim.drive} only</span>
                     </div>
                   )}
                   {v.photo

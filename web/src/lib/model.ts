@@ -52,7 +52,7 @@ export interface User {
 
 export interface Settings {
   units: Units; currency: string; soonDays: number; soonDist: number; accent: string; fullWidth: boolean;
-  showTotals: boolean; defaultSec: string;
+  showTotals: boolean; defaultSec: string; showDoneCol: boolean; hideDoneDays: number;
 }
 
 export interface Garage {
@@ -62,7 +62,7 @@ export interface Garage {
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
 }
 
-export const SETTINGS0: Settings = { units: 'km', currency: '$', soonDays: 14, soonDist: 500, accent: '', fullWidth: false, showTotals: true, defaultSec: 'overview' };
+export const SETTINGS0: Settings = { units: 'km', currency: '$', soonDays: 14, soonDist: 500, accent: '', fullWidth: false, showTotals: true, defaultSec: 'overview', showDoneCol: true, hideDoneDays: 7 };
 
 // ---------- constants ----------
 export const COLS: [Col, string, string][] = [['backlog', 'Backlog', '#8d9099'], ['parts', 'Waiting on parts', '#e8b04b'], ['progress', 'In progress', '#5b84ff'], ['done', 'Done', '#3fcf8e']];
@@ -246,4 +246,90 @@ export class Calc {
     });
     return items.sort((a, b) => a.rank - b.rank || a.key - b.key);
   }
+}
+
+// ---------- board ----------
+export const recTypeFor = (taskType: string): RecType => (taskType === 'Repair' ? 'Repair' : taskType === 'Maintenance' ? 'Service' : taskType === 'Upgrade' ? 'Upgrade' : 'Other');
+const ev = (text: string, by: string | null): Activity => ({ id: uid(), at: new Date().toISOString(), kind: 'event', text, by });
+
+/** Move a task. Done logs it to service history and installs its in-stock parts; moving it back out undoes the auto entry. */
+export function moveCard(g: Garage, vid: string, id: string, toCol: Col, idx: number, by: string | null, TODAY = today()): Garage {
+  const b = structuredClone(g.boards[vid]);
+  const f = (Object.keys(b) as Col[]).find(k => b[k].some(x => x.id === id));
+  if (!f) return g;
+  const fi = b[f].findIndex(x => x.id === id);
+  let [card] = b[f].splice(fi, 1);
+  if (f === toCol && fi < idx) idx--;
+  let records = g.records, parts = g.parts, log = g.log;
+  if (f !== toCol) {
+    card = { ...card, activity: [...(card.activity || []), ev(`Moved from ${COLNAME[f]} to ${COLNAME[toCol]}`, by)] };
+    log = [{ id: uid(), at: new Date().toISOString(), by, vid, text: `moved "${card.title}" to ${COLNAME[toCol]}` }, ...log];
+  }
+  if (toCol === 'done' && f !== 'done') {
+    if (!card.logged) {
+      const v = g.vehicles.find(x => x.id === vid), odo = v ? new Calc(g, TODAY).stats(v).odo : 0;
+      const rec: Rec = { id: uid(), vid, cardId: card.id, type: recTypeFor(card.type), date: TODAY, odo, title: card.title, cost: +card.est || 0, notes: 'From build board' + (card.note ? ' · ' + card.note : ''), by };
+      records = [rec, ...records];
+      card = { ...card, logged: true, autoRec: rec.id, doneAt: TODAY };
+    } else card = { ...card, doneAt: TODAY };
+    const inst = parts.filter(p => p.cardId === id && p.status === 'In stock');
+    card = { ...card, activity: [...(card.activity || []), ...inst.map(p => ev(`Marked “${p.name || 'a part'}” as installed`, by))] };
+    parts = parts.map(p => (p.cardId === id && p.status === 'In stock' ? { ...p, status: 'Installed' as const } : p));
+  } else if (f === 'done' && toCol !== 'done') {
+    if (card.autoRec) records = records.filter(r => r.id !== card.autoRec);
+    card = { ...card, logged: card.autoRec ? false : card.logged, autoRec: undefined, doneAt: undefined };
+  }
+  b[toCol].splice(idx, 0, card);
+  return { ...g, boards: { ...g.boards, [vid]: b }, records, parts, log };
+}
+
+// ---------- reminders ----------
+export const fmtMonths = (m: number) => (m === 1 ? 'month' : m === 12 ? 'year' : m % 12 === 0 ? `${m / 12} years` : `${m} months`);
+export const fmtEvery = (d: number) => (!d ? '' : d % 365 === 0 ? (d === 365 ? 'year' : `${d / 365} years`) : d >= 28 ? fmtMonths(Math.round(d / 30.42)) : d === 7 ? 'week' : `${d} days`);
+
+// [title, history match, repeat days, repeat km, pass/fail check, checklist]
+export const TEMPLATES: [string, RegExp, number, number | '', boolean, string[]][] = [
+  ['Oil change', /oil change|oil &|oil and/i, 182, 8000, false, ['Engine oil', 'Oil filter']],
+  ['Brake fluid change', /brake fluid/i, 730, '', false, ['Check brake pads', 'Check rotors', 'Flush fluid']],
+  ['Tyre check', /tyre|tire/i, 30, '', true, ['Inspect tyre tread', 'Check sidewalls for cracks or bulges', 'Pump up tyre pressure']],
+  ['Coolant flush', /coolant/i, 730, '', false, ['Drain coolant', 'Flush system', 'Refill 50/50 mix', 'Bleed air from system']],
+  ['Spark plugs', /spark plug|plugs/i, 730, 48000, false, ['Remove and inspect plugs', 'Check and set gaps', 'Inspect leads for cracks', 'Anti-seize on threads']],
+  ['Timing belt', /timing belt/i, 1460, 60000, false, ['Timing belt', 'Tensioner and roller', 'Water pump', 'Cam and crank seals', 'Set timing marks']],
+  ['Diff oil change', /diff/i, 730, '', false, ['Drain diff', 'Inspect drain plug magnet', 'Refill 75W-90', 'Check for leaks after a drive']],
+  ['Carburettor tune', /carb/i, 182, '', false, ['Balance carbs', 'Set idle mixture', 'Top up dashpot oil', 'Check linkage free play']],
+  ['Cooling system check', /cooling/i, 30, '', true, ['Coolant level at cold', 'Hoses firm, no cracks', 'Radiator cap seal', 'Fan kicks in at temperature']],
+  ['Battery tender check', /battery/i, 30, '', true, ['Tender connected', 'Terminals clean and tight', 'Resting voltage above 12.6 V']],
+  ['Pre-track inspection', /track/i, 30, '', true, ['Torque wheel nuts', 'Check brake pad thickness', 'Check fluid levels', 'Look for leaks under the car', 'Helmet and harness ready']],
+  ['Storage check', /storage/i, 30, '', true, ['Battery tender connected', 'Tyre pressures', 'Check for rodents', 'Run engine to temperature']],
+  ['Annual inspection', /\bmot\b|roadworthy|annual inspection|^inspection/i, 365, '', true, ['Lights & indicators', 'Brakes & handbrake', 'Tyres & wheels', 'Steering & suspension', 'Seatbelts', 'Exhaust & emissions', 'Windscreen, wipers & washers', 'Horn', 'Body & chassis corrosion', 'VIN & plates legible']],
+  ['Monthly safety check', /safety (inspection|check)/i, 30, '', true, ['Lights & indicators', 'Brake pedal feel', 'Tyre tread depth', 'Tyre pressure', 'Wipers & washers']],
+];
+export function fuelSys(v: Partial<Vehicle>) {
+  if (v.fuelSystem) return v.fuelSystem;
+  const e = ((v.engine || '') + ' ' + (v.fuelType || '')).toLowerCase();
+  if (/electric/.test(e)) return 'Electric'; if (/diesel|tdi|crd/.test(e)) return 'Diesel';
+  if (/carb|\bsu\b|weber|dellorto|solex/.test(e)) return 'Carburettor'; if (/efi|inject|\bfi\b|jetronic|motronic|mpfi|\bgdi\b/.test(e)) return 'Fuel injection';
+  const y = +(v.year || 0); return !y ? '' : y >= 1986 ? 'Fuel injection' : y < 1980 ? 'Carburettor' : '';
+}
+/** Templates are filtered by fuel system: no carb tune on an injected car, no oil change on an EV. */
+export function tplApplies(tp: typeof TEMPLATES[0], v: Partial<Vehicle>) {
+  const fs = fuelSys(v), n = tp[0];
+  if (/Carburettor/.test(n)) return fs === 'Carburettor' || fs === '';
+  if (n === 'Spark plugs') return fs !== 'Diesel' && fs !== 'Electric';
+  if (['Oil change', 'Timing belt', 'Coolant flush'].includes(n)) return fs !== 'Electric';
+  return true;
+}
+/** A reminder from a template, due from the last matching entry in the car's history (or today). */
+export function templateRem(tp: typeof TEMPLATES[0], vid: string, odo: number, unit: Units, recs: Rec[], TODAY = today()): Reminder {
+  const [title, re, rd, km, isCheck, checklist] = tp, dist = km ? Math.round((km * (unit === 'km' ? 1 : 0.62)) / 100) * 100 : '';
+  const l = recs.filter(r => r.vid === vid && r.type !== 'Fuel' && re.test(r.title || '')).sort((x, y) => y.date.localeCompare(x.date))[0];
+  const base = l ? l.date : TODAY, bo = l ? +l.odo || odo : odo;
+  return { id: uid(), vid, title, dueDate: addDays(base, rd), dueOdo: dist ? bo + dist : '', repeatDays: rd, repeatDist: dist, isCheck, checklist: [...checklist], notes: '', repeatFrom: 'done', done: false, ...(l ? { lastDone: l.date } : {}) };
+}
+
+// ---------- export ----------
+export const csv = (rows: unknown[][]) => rows.map(r => r.map(c => { const s = c == null ? '' : String(c); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\n');
+export function download(name: string, text: string, type = 'text/csv') {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }

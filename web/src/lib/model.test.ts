@@ -45,3 +45,35 @@ test('yearly repeats use calendar years', () => {
   assert.equal(nextDue('2024-02-29', 365), '2025-03-01');
   assert.equal(nextDue('2026-06-01', 730), '2028-06-01');
 });
+
+test('moving a task to Done logs it and installs its parts; moving it back undoes the entry', async () => {
+  const { moveCard } = await import('./model.ts');
+  const g0 = seed('u1', T), coolant = g0.boards.v1.progress.find(c => c.title === 'Coolant flush')!;
+  const g1 = moveCard(g0, 'v1', coolant.id, 'done', 0, 'u1', T);
+  const card = g1.boards.v1.done[0];
+  assert.equal(card.id, coolant.id);
+  const rec = g1.records.find(r => r.id === card.autoRec)!;
+  assert.deepEqual([rec.type, rec.date, rec.odo, rec.cost], ['Service', T, 128450, 36]);
+  assert.ok(g1.parts.filter(p => p.cardId === coolant.id).every(p => p.status === 'Installed'));
+  const g2 = moveCard(g1, 'v1', coolant.id, 'backlog', 0, 'u1', T);
+  assert.equal(g2.records.length, g0.records.length);
+  assert.equal(g2.boards.v1.backlog[0].logged, false);
+  // Reordering inside a column keeps the count and lands where asked.
+  const first = g0.boards.v1.backlog[0];
+  const g3 = moveCard(g0, 'v1', first.id, 'backlog', 3, 'u1', T);
+  assert.equal(g3.boards.v1.backlog[2].id, first.id);
+});
+
+test('templates follow the fuel system and the last matching entry', async () => {
+  const { TEMPLATES, tplApplies, templateRem } = await import('./model.ts');
+  const tp = (n: string) => TEMPLATES.find(t => t[0] === n)!;
+  assert.equal(tplApplies(tp('Carburettor tune'), mx5), false);
+  assert.equal(tplApplies(tp('Carburettor tune'), g.vehicles[2]), true); // 1972 240Z
+  const oil = templateRem(tp('Oil change'), 'v1', 128450, 'km', g.records, T);
+  assert.deepEqual([oil.lastDone, oil.dueDate, oil.dueOdo], ['2026-10-18', '2027-04-18', 136210]);
+});
+
+test('CSV quotes commas, quotes and newlines', async () => {
+  const { csv } = await import('./model.ts');
+  assert.equal(csv([['a', 'b,c', 'say "hi"', 'x\ny', null]]), 'a,"b,c","say ""hi""","x\ny",');
+});

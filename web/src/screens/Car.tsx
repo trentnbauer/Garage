@@ -5,6 +5,13 @@ import type { Store } from '../lib/store.ts';
 import { AccountMenu } from '../ui/AccountMenu.tsx';
 import { Icon, type IconName } from '../ui/icons.tsx';
 import { Overview } from './Overview.tsx';
+import { Board } from './Board.tsx';
+import { History } from './History.tsx';
+import { Fuel } from './Fuel.tsx';
+import { Reminders } from './Reminders.tsx';
+import { Notes } from './Notes.tsx';
+
+export type Tab = { calc: Calc; car: Vehicle; nav: Nav; store: Store; me: User };
 
 const NAV: [Sec, string, IconName, string][] = [
   ['overview', 'Overview', 'grid', 'Overview'], ['details', 'Details', 'car', 'Car details'], ['specs', 'Specs', 'ruler', 'Specs'],
@@ -18,6 +25,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
   const [scrolled, setScrolled] = useState(false);
   const [carMenu, setCarMenu] = useState(false);
   const st = calc.stats(car);
+  const tab: Tab = { calc, car, nav, store, me };
   const board = g.boards[car.id] || { backlog: [], parts: [], progress: [], done: [] };
   const lim = driveLimit(board);
   const limN = (['backlog', 'parts', 'progress'] as const).reduce((a, k) => a + board[k].filter(c => c.drive && DRIVE[c.drive].rank > 0).length, 0);
@@ -79,6 +87,15 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
               {car.vin && <span title="VIN" className="mono" style={{ display: 'inline-flex', alignItems: 'center', height: 28, padding: '0 12px', border: '1px solid var(--line2)', borderRadius: 999, fontSize: 12, color: 'var(--mut)', whiteSpace: 'nowrap', letterSpacing: '.04em', gap: 6 }}><span>VIN</span><span style={{ color: 'var(--fg)' }}>{car.vin}</span></span>}
             </div>
             <div style={{ flex: 1 }} />
+            {sec === 'board' && (
+              <button type="button" role="switch" aria-checked={g.settings.showDoneCol !== false} className="btn" title="Show or hide the Done column" style={{ gap: 8, padding: '0 14px' }}
+                onClick={() => store.update(g2 => ({ ...g2, settings: { ...g2.settings, showDoneCol: g2.settings.showDoneCol === false } }))}>
+                <span>Show Done Column<br /></span>
+                <span style={{ width: 36, height: 22, borderRadius: 999, flex: 'none', position: 'relative', background: g.settings.showDoneCol !== false ? 'var(--acc)' : '#2e2e2e' }}>
+                  <span style={{ position: 'absolute', top: 3, left: g.settings.showDoneCol !== false ? 17 : 3, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+                </span>
+              </button>
+            )}
             <AccountMenu me={me} onSwitch={store.logout} onSignOut={store.logout} />
             <button className="btn mono" onClick={nav.soon} title="Update the odometer"><Icon n="gauge" s={15} />{Number(st.odo).toLocaleString()} {calc.u}</button>
             {!narrow && <button className="btn-fuel" onClick={nav.soon}><Icon n="fuel" s={15} />Add fill-up</button>}
@@ -93,7 +110,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
           )}
           {lim && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 18px', borderRadius: 16, background: DRIVE[lim.drive!].color, color: '#140f05', flexWrap: 'wrap' }}>
-              <Icon n="alert" s={22} w={2.2} />
+              <Icon n="alert" s={22} w={2.2} style={{ flex: 'none' }} />
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-.01em', textTransform: 'uppercase' }}>{lim.drive} only</div>
                 <div style={{ fontSize: 13, opacity: 0.8 }}>Until “{lim.title}” is fixed{limN > 1 ? ` · ${limN - 1} more task${limN > 2 ? 's' : ''} also limit driving` : ''}</div>
@@ -102,8 +119,12 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
             </div>
           )}
 
-          {sec === 'overview'
-            ? <Overview calc={calc} car={car} nav={nav} />
+          {sec === 'overview' ? <Overview calc={calc} car={car} nav={nav} />
+            : sec === 'board' ? <Board {...tab} narrow={narrow} />
+            : sec === 'history' ? <History {...tab} />
+            : sec === 'fuel' ? <Fuel {...tab} />
+            : sec === 'reminders' ? <Reminders {...tab} />
+            : sec === 'notes' ? <Notes {...tab} />
             : <div className="card" style={{ alignItems: 'flex-start', gap: 6 }}><span className="card-t">{SECS[sec]}</span><span className="mut" style={{ fontSize: 13 }}>This section isn’t built yet. It’s coming in the next updates.</span></div>}
         </div>
       </div>

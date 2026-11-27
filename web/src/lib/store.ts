@@ -33,7 +33,7 @@ export function useStore(): Store {
     if (!r?.ok) { setError('Can’t reach the Garage server.'); return; }
     if (r.json.empty) {
       // First run: start from the sample garage so there is something to look at.
-      const start = seed(null);
+      const start = seed('u1'); // entries are credited to the first profile, the admin
       const w = await call('PUT', '/api/state', { garage: start });
       if (!w.ok) { setError(w.json.error || 'Couldn’t set up the garage.'); return; }
       return load();

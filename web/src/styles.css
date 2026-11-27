@@ -13,7 +13,8 @@ button, input, select, textarea { font-family: inherit; }
 a { color: var(--acc); } a:hover { opacity: .8; }
 input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 option { background: #1d1d1d; }
-svg.i { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+/* Icons may shrink in a tight row, as in the design; pin them with flex: none where they mustn't. */
+svg.i { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Pages sit in a rounded frame and scroll inside it with the scrollbar hidden. */
 .frame { height: calc(100vh - 32px); width: calc(100% - 32px); max-width: 1920px; margin: 16px auto; border: 1px solid var(--line2); border-radius: 24px; background: var(--frame); overflow-y: auto; scrollbar-width: none; }
@@ -77,3 +78,22 @@ svg.i { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round
 .car-img { height: 190px; border-radius: 14px; overflow: hidden; position: relative; background: var(--card2); cursor: pointer; }
 .car-img:hover { filter: brightness(1.12); }
 .bar:hover { filter: brightness(1.25); }
+
+.btn-danger { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; height: 36px; padding: 0 16px; border-radius: 999px; background: var(--down); color: #fff; font-weight: 600; font-size: 13px; }
+.btn-danger:hover { background: #e0564d; }
+.icon-btn { width: 32px; height: 32px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--mut); }
+.icon-btn:hover { background: var(--card2); color: var(--fg); }
+.ghost { color: var(--mut); }
+.ghost:hover { background: var(--card2); color: var(--fg); }
+.ghost-del:hover { background: var(--card2); color: var(--down); }
+.to-up:hover { color: var(--up); }
+.to-acc:hover { color: var(--acc); }
+.to-fg:hover { color: var(--fg); }
+.trow:hover { background: rgba(255,255,255,.03); }
+.frow:hover { background: rgba(255,255,255,.02); }
+.task { background: var(--card2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; cursor: grab; display: flex; flex-direction: column; gap: 8px; }
+.task:hover { border-color: var(--line2); }
+.task-top:hover { background: var(--card); color: var(--fg); }
+.dashed { all: unset; box-sizing: border-box; cursor: pointer; border: 1px dashed var(--line2); color: var(--mut); }
+.dashed:hover { color: var(--fg); border-color: var(--mut); }
+.fill-big:hover { background: #f0bf60; }
