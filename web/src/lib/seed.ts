@@ -65,7 +65,8 @@ export function seed(by: string | null = 'u1', TODAY = today()): Garage {
   const rec = (vid: string, date: string, type: Rec['type'], odo: number, title: string, cost: number, extra: Partial<Rec> = {}): Rec =>
     ({ id: uid(), vid, date, type, odo, title, cost, notes: '', by, ...extra });
   const vehicles: Vehicle[] = [
-    { id: 'v1', year: 1991, make: 'Mazda', model: 'MX-5 Miata', nickname: 'Mariner', odometer: 128450, purchasePrice: 4800, plate: 'MX5-091', colour: 'Mariner Blue', engine: '1.6L B6 I4', transmission: '5-speed manual', vin: 'JM1NA3510M0212345', usage: 'daily', regoExpiry: '2027-06-01', regoTerm: 12, insuranceRenewal: '2027-03-15', fuelType: 'Petrol — 91 / Regular' },
+    { id: 'v1', year: 1991, make: 'Mazda', model: 'MX-5 Miata', nickname: 'Mariner', odometer: 128450, purchasePrice: 4800, plate: 'MX5-091', colour: 'Mariner Blue', engine: '1.6L B6 I4', transmission: '5-speed manual', vin: 'JM1NA3510M0212345', usage: 'daily', regoExpiry: '2027-06-01', regoTerm: 12, insuranceRenewal: '2027-03-15', fuelType: 'Petrol — 91 / Regular',
+      specs: { torque: [{ item: 'Wheel nuts', value: '65–80 ft-lb' }], fluids: [{ system: 'Coolant', type: '50/50', capacity: '6.0 L' }], tyres: [], parts: [{ item: 'Oil filter', partNo: 'Wix 51358' }] } },
     { id: 'v2', year: 1987, make: 'BMW', model: '325i', nickname: 'E30', odometer: 186200, purchasePrice: 7500, plate: 'E30-221', colour: 'Alpine White', engine: '2.5L M20 I6', transmission: '5-speed manual', usage: 'track', regoExpiry: '2026-12-08', regoTerm: 6, fuelType: 'Petrol — 91 / Regular' },
     { id: 'v3', year: 1972, make: 'Datsun', model: '240Z', nickname: 'Zed', odometer: 64310, purchasePrice: 14500, usage: 'weekend', insuranceRenewal: '2027-03-01' },
   ];

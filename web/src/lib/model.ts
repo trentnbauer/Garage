@@ -14,10 +14,16 @@ export interface Vehicle {
   odometer: number | ''; odoAt?: string; engine?: string; transmission?: string; fuelType?: string; fuelSystem?: string;
   purchaseDate?: string; purchasePrice?: number | ''; purchaseOdo?: number | ''; estValue?: number | '' | null;
   regoExpiry?: string; regoTerm?: 3 | 6 | 12; insurer?: string; policyNo?: string; insuranceRenewal?: string; claimsPhone?: string;
-  photo?: string; docs?: FileRef[]; specs?: Record<string, unknown>; manuals?: { id: string; name: string; pages: number }[];
+  coverType?: string; agreedValue?: number | ''; premium?: number | ''; boughtFrom?: string;
+  photo?: string; docs?: (FileRef & { kind: 'rego' | 'rwc' | 'insurance' | 'purchase' })[]; specs?: Specs; manuals?: { id: string; name: string; pages: number }[];
   sold?: { date: string; price: number | null; to: string } | null; odoLog?: OdoReading[];
   src?: string; srcKeys?: string[]; noteKeys?: string[];
 }
+
+export type SpecRow = Record<string, string>;
+// Groups by key (torque, fluids…) plus `custom` sections and `_shown` optional groups the user added.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Specs = Record<string, any>;
 
 export interface Rec {
   id: string; vid: string; type: RecType; date: string; odo: number | ''; title: string; cost: number | null; labour?: number;
@@ -338,3 +344,17 @@ export function download(name: string, text: string, type = 'text/csv') {
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
+// ---------- specs ----------
+// key → [title, hint, columns [field, label, placeholder, flex], always shown, noun for "+ Add", starter rows]
+export const SPEC_DEF: Record<string, [string, string, [string, string, string, number][], boolean, string, string[]?]> = {
+  torque: ['Torque specs', 'Fasteners you undo often', [['item', 'Fastener', 'Wheel nuts', 2], ['value', 'Torque', 'e.g. 65–80 ft-lb', 1]], true, 'torque spec'],
+  fluids: ['Fluids & capacities', 'Type and fill amount', [['system', 'System', 'Engine oil', 1.3], ['type', 'Type', 'e.g. 5W-30', 1.2], ['capacity', 'Capacity', 'e.g. 3.8 L', 0.9]], true, 'fluid'],
+  tyres: ['Tyres', 'Sizes and cold pressures', [['pos', 'Position', 'Front', 0.9], ['size', 'Size', 'e.g. 195/50R15', 1.3], ['pressure', 'Pressure', 'e.g. 28 psi', 1]], true, 'tyre'],
+  parts: ['Filters & bulbs', 'Part numbers you re-buy', [['item', 'Item', 'Oil filter', 1.3], ['partNo', 'Part number', 'e.g. Wix 51358', 1.3]], true, 'part number'],
+  tune: ['Engine tune', 'Ignition, idle and valve settings', [['item', 'Setting', 'Spark plug gap', 1.4], ['value', 'Value', 'e.g. 1.0–1.1 mm', 1.2]], false, 'setting', ['Spark plug gap', 'Ignition timing', 'Idle speed', 'Valve clearance']],
+  alignment: ['Alignment & suspension', 'Wheel alignment and ride height', [['item', 'Setting', 'Camber', 1.1], ['front', 'Front', 'e.g. -1.0°', 1], ['rear', 'Rear', 'e.g. -1.5°', 1]], false, 'setting', ['Camber', 'Caster', 'Toe', 'Ride height']],
+  brakes: ['Brakes', 'Pads, rotors and minimum thickness', [['item', 'Part', 'Front pads', 1.2], ['spec', 'Spec', 'e.g. EBC Yellowstuff DP4', 1.4], ['min', 'Min. thickness', 'e.g. 18 mm', 0.9]], false, 'brake spec'],
+  electrical: ['Electrical', 'Battery, charging and fuses', [['item', 'Item', 'Battery', 1.2], ['value', 'Spec', 'e.g. 12 V 45 Ah, group 51R', 1.6]], false, 'electrical spec', ['Battery', 'Alternator output', 'Main fuse']],
+  dims: ['Dimensions & weights', 'Handy when towing or shipping', [['item', 'Measurement', 'Kerb weight', 1.3], ['value', 'Value', 'e.g. 960 kg', 1.1]], false, 'measurement', ['Kerb weight', 'Wheelbase', 'Length × width', 'Towing capacity']],
+};
