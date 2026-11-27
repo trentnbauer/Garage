@@ -74,6 +74,11 @@ export const UCOLORS = ['#5b84ff', '#3fcf8e', '#e8b04b', '#f2685f', '#b48cff', '
 export const SECS = { overview: 'Overview', details: 'Car details', specs: 'Specs', board: 'Build board', photos: 'Build photos', history: 'Service history', fuel: 'Fuel log', reminders: 'Reminders', parts: 'Parts', notes: 'Notes', manual: 'Workshop manual' } as const;
 export type Sec = keyof typeof SECS;
 export const STATUS_COL = ['#f2685f', '#e8b04b', '#b5b5b5'];
+export const FUELS = ['Petrol — 91 / Regular', 'Petrol — 95 / Mid-grade', 'Petrol — 98 / Premium', 'E10', 'E85', 'Diesel', 'LPG'];
+export const PSTAT: Part['status'][] = ['Needed', 'Ordered', 'In stock', 'Installed'];
+export const PCOL: Record<string, string> = { Needed: '#f2685f', Ordered: '#e8b04b', 'In stock': '#5b84ff', Installed: '#3fcf8e' };
+/** The grade of the last fill-up, else the car's fuel type. */
+export const lastGrade = (g: Garage, vid: string) => g.records.filter(r => r.vid === vid && r.type === 'Fuel' && r.title && r.title !== 'Fill-up').sort((a, b) => b.date.localeCompare(a.date))[0]?.title || g.vehicles.find(v => v.id === vid)?.fuelType || FUELS[0];
 
 // ---------- dates ----------
 export const liso = (x: Date) => x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');

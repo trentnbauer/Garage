@@ -5,6 +5,8 @@ import type { Store } from '../lib/store.ts';
 import { AccountMenu } from '../ui/AccountMenu.tsx';
 import { Icon, type IconName } from '../ui/icons.tsx';
 import { Overview } from './Overview.tsx';
+import { blankRecord, fuelRecord, odoForm } from '../ui/Dialogs.tsx';
+import { cardForm } from '../lib/actions.ts';
 import { Board } from './Board.tsx';
 import { History } from './History.tsx';
 import { Fuel } from './Fuel.tsx';
@@ -48,7 +50,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
             {moreOpts.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
         </div>
-        <button className="plain" onClick={nav.soon} title="Add fill-up" style={{ position: 'fixed', right: 16, bottom: 'calc(76px + env(safe-area-inset-bottom))', zIndex: 46, height: 56, padding: '0 22px', borderRadius: 999, background: '#e8b04b', color: '#1a1408', fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}><Icon n="plus" s={18} w={2.4} />Fill-up</button>
+        <button className="plain" onClick={() => nav.open({ kind: 'record', vid: car.id, form: fuelRecord(calc, car.id) })} title="Add fill-up" style={{ position: 'fixed', right: 16, bottom: 'calc(76px + env(safe-area-inset-bottom))', zIndex: 46, height: 56, padding: '0 22px', borderRadius: 999, background: '#e8b04b', color: '#1a1408', fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, boxShadow: '0 10px 30px rgba(0,0,0,.5)' }}><Icon n="plus" s={18} w={2.4} />Fill-up</button>
       </>}
 
       <div className="frame" style={{ display: 'flex', overflow: 'clip' }}>
@@ -97,9 +99,9 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
               </button>
             )}
             <AccountMenu me={me} onSwitch={store.logout} onSignOut={store.logout} />
-            <button className="btn mono" onClick={nav.soon} title="Update the odometer"><Icon n="gauge" s={15} />{Number(st.odo).toLocaleString()} {calc.u}</button>
-            {!narrow && <button className="btn-fuel" onClick={nav.soon}><Icon n="fuel" s={15} />Add fill-up</button>}
-            <button className="btn-p" onClick={nav.soon}><Icon n="plus" w={2.2} />Log service</button>
+            <button className="btn mono" onClick={() => nav.open({ kind: 'odo', vid: car.id, form: odoForm(calc, car.id) })} title="Update the odometer"><Icon n="gauge" s={15} />{Number(st.odo).toLocaleString()} {calc.u}</button>
+            {!narrow && <button className="btn-fuel" onClick={() => nav.open({ kind: 'record', vid: car.id, form: fuelRecord(calc, car.id) })}><Icon n="fuel" s={15} />Add fill-up</button>}
+            <button className="btn-p" onClick={() => nav.open({ kind: 'record', vid: car.id, form: blankRecord(calc, car.id) })}><Icon n="plus" w={2.2} />Log service</button>
           </header>
 
           {car.sold && (
@@ -115,7 +117,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
                 <div style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-.01em', textTransform: 'uppercase' }}>{lim.drive} only</div>
                 <div style={{ fontSize: 13, opacity: 0.8 }}>Until “{lim.title}” is fixed{limN > 1 ? ` · ${limN - 1} more task${limN > 2 ? 's' : ''} also limit driving` : ''}</div>
               </div>
-              <button className="plain" onClick={() => nav.go({ sec: 'board' })} style={{ height: 36, padding: '0 16px', borderRadius: 999, background: 'rgba(0,0,0,.82)', color: '#fff', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>View task<Icon n="arrow" s={14} /></button>
+              <button className="plain" onClick={() => { nav.go({ sec: 'board' }); const k = (['backlog', 'parts', 'progress'] as const).find(c => board[c].some(x => x.id === lim.id))!; nav.open({ kind: 'card', vid: car.id, form: cardForm(lim, k, board[k].findIndex(x => x.id === lim.id)) }); }} style={{ height: 36, padding: '0 16px', borderRadius: 999, background: 'rgba(0,0,0,.82)', color: '#fff', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>View task<Icon n="arrow" s={14} /></button>
             </div>
           )}
 

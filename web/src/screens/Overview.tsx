@@ -1,5 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { Nav } from '../App.tsx';
+import { cardForm, remEditForm } from '../lib/actions.ts';
+import { odoForm } from '../ui/Dialogs.tsx';
 import { type Calc, COLS, days, fdate, RTYPES, TCOL, type Vehicle } from '../lib/model.ts';
 
 const sDate = (d: string) => fdate(d).replace(/,? \d{4}$/, '');
@@ -64,7 +66,7 @@ export function Overview({ calc, car, nav }: { calc: Calc; car: Vehicle; nav: Na
               <span style={{ fontSize: 12, color: 'var(--mut)' }}>{s.k}</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span className="mono" style={{ fontSize: 11, color: s.tagFg }}>{s.tag}</span>
-                {s.act && <button className="plain" onClick={nav.soon} title="Add distance driven" style={{ height: 22, padding: '0 8px', borderRadius: 999, background: 'var(--accs)', color: 'var(--acc)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                {s.act && <button className="plain" onClick={() => nav.open({ kind: 'odo', vid: car.id, form: odoForm(calc, car.id) })} title="Add distance driven" style={{ height: 22, padding: '0 8px', borderRadius: 999, background: 'var(--accs)', color: 'var(--acc)', fontSize: 11, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
                   <svg className="i" viewBox="0 0 24 24" width={11} height={11} style={{ strokeWidth: 2.6 }} aria-hidden="true"><path d="M5 12h14" /><path d="M12 5v14" /></svg>{u}
                 </button>}
               </span>
@@ -136,7 +138,8 @@ export function Overview({ calc, car, nav }: { calc: Calc; car: Vehicle; nav: Na
           <div className="card-h" style={{ marginBottom: 6 }}><span className="card-t">Due</span><button className="link" onClick={() => nav.go({ sec: 'reminders' })}>All</button></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,240px),1fr))', columnGap: 24 }}>
             {upcoming.map(x => {
-              const r = x.kind === 'rem' ? { key: x.r.id, title: x.r.title, short: x.i.short, color: x.i.color, go: nav.soon } : { key: x.c.id, title: x.c.title, short: 'Task · ' + x.short, color: x.color, go: () => nav.go({ sec: 'board' }) };
+              const r = x.kind === 'rem' ? { key: x.r.id, title: x.r.title, short: x.i.short, color: x.i.color, go: () => nav.open({ kind: 'reminder', vid: car.id, form: remEditForm(x.r) }) }
+                : { key: x.c.id, title: x.c.title, short: 'Task · ' + x.short, color: x.color, go: () => nav.open({ kind: 'card', vid: car.id, form: cardForm(x.c, x.k, board[x.k].findIndex(c => c.id === x.c.id)) }) };
               return (
                 <button key={r.key} className="plain row" onClick={r.go} title="Edit reminder" style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0' }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', flex: 'none', background: r.color }} />

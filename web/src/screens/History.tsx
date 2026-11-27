@@ -47,7 +47,7 @@ export function History({ calc, car, nav, me }: Tab) {
       {rows.map(r => {
         const extra = [r.type === 'Fuel' && r.gallons ? `${r.gallons} ${vol}` + (econ[r.id] ? ` · ${econ[r.id]} ${eu}` : '') : '', r.where === 'shop' ? 'Workshop' : '', r.checks ? `${r.checks.filter(x => x.done).length}/${r.checks.length} checks` : '', r.notes, r.by ? 'by ' + (r.by === me.id ? 'You' : by(r.by)) : ''].filter(Boolean).join(' · ');
         return (
-          <div key={r.id} className="trow" role="button" tabIndex={0} onClick={nav.soon} onKeyDown={e => e.key === 'Enter' && nav.soon()} title="Open entry" style={{ display: 'grid', gridTemplateColumns: cols, minWidth: 660, gap: 12, padding: '12px 18px', alignItems: 'center', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
+          <div key={r.id} className="trow" role="button" tabIndex={0} onClick={() => nav.open({ kind: 'entry', vid: car.id, id: r.id })} onKeyDown={e => e.key === 'Enter' && nav.open({ kind: 'entry', vid: car.id, id: r.id })} title="Open entry" style={{ display: 'grid', gridTemplateColumns: cols, minWidth: 660, gap: 12, padding: '12px 18px', alignItems: 'center', borderBottom: '1px solid var(--line)', cursor: 'pointer' }}>
             <span style={{ fontSize: 13, color: 'var(--mut)' }}>{fdate(r.date)}</span>
             <span><span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: tint(TCOL[r.type], '22'), color: TCOL[r.type] }}>{r.type}</span></span>
             <div style={{ minWidth: 0 }}>

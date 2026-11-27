@@ -1,5 +1,6 @@
 import { csv, download, econSeries, fdate } from '../lib/model.ts';
 import { Icon } from '../ui/icons.tsx';
+import { fuelRecord } from '../ui/Dialogs.tsx';
 import type { Tab } from './Car.tsx';
 
 /** Smooth path through points (Catmull-Rom as cubic Béziers). */
@@ -58,7 +59,7 @@ export function Fuel({ calc, car, nav, store }: Tab) {
         </> : <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mut)', fontSize: 13 }}>{pts.length === 1 ? 'Log one more fill-up to see a trend.' : fl.length === 1 ? 'Economy needs two full fill-ups. Log one more to see it.' : 'Log two full fill-ups to see economy.'}</div>}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <button className="plain fill-big" onClick={nav.soon} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 52, borderRadius: 16, background: '#e8b04b', color: '#1a1408', fontWeight: 700, fontSize: 14 }}><Icon n="plus" s={17} w={2.2} />Add fill-up</button>
+        <button className="plain fill-big" onClick={() => nav.open({ kind: 'record', vid: car.id, form: fuelRecord(calc, car.id) })} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 52, borderRadius: 16, background: '#e8b04b', color: '#1a1408', fontWeight: 700, fontSize: 14 }}><Icon n="plus" s={17} w={2.2} />Add fill-up</button>
         {stats.map(s => <div key={s.k} style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 14, padding: '14px 16px', flex: 1 }}><div style={{ fontSize: 12, color: 'var(--mut)' }}>{s.k}</div><div className="mono" style={{ fontWeight: 700, fontSize: 20 }}>{s.v}</div></div>)}
       </div>
     </div>

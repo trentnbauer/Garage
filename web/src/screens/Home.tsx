@@ -3,6 +3,8 @@ import type { Nav } from '../App.tsx';
 import { type Calc, DRIVE, driveLimit, fdate, tint, type User, type Vehicle } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
 import { AccountMenu } from '../ui/AccountMenu.tsx';
+import { vehicleForm } from '../ui/Dialogs.tsx';
+import { cardForm, remEditForm, remForm } from '../lib/actions.ts';
 import { Icon } from '../ui/icons.tsx';
 
 export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User; calc: Calc; nav: Nav; narrow: boolean }) {
@@ -36,7 +38,7 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
             <div className="title" style={{ marginTop: 6 }}>Which car today?</div>
           </div>
           <div style={{ display: 'flex', gap: 8, flex: 'none' }}>
-            <button className="plain dim" onClick={nav.soon} title="Add vehicle" aria-label="Add vehicle" style={{ width: 34, height: 34, margin: '5px 0', borderRadius: '50%', background: 'var(--fg)', color: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={20} w={2.2} /></button>
+            <button className="plain dim" onClick={() => nav.open({ kind: 'vehicle', form: vehicleForm() })} title="Add vehicle" aria-label="Add vehicle" style={{ width: 34, height: 34, margin: '5px 0', borderRadius: '50%', background: 'var(--fg)', color: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={20} w={2.2} /></button>
             <AccountMenu big me={me} onSwitch={store.logout} onSignOut={store.logout} />
           </div>
         </div>
@@ -117,8 +119,9 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
             </div>
             {due.map(x => {
               const t = x.kind === 'rem'
-                ? { key: x.r.id, title: x.r.title, status: x.i.status, bg: tint(x.i.color, '22'), fg: x.i.color, due: x.i.due, btn: 'Mark done', go: nav.soon }
-                : { key: x.c.id, title: x.c.title, status: x.status, bg: x.blk ? x.color : tint(x.color, '22'), fg: x.blk ? '#140f05' : x.color, due: x.due, btn: 'View task', go: () => nav.go({ view: 'car', activeId: x.v.id, sec: 'board' }) };
+                ? { key: x.r.id, title: x.r.title, status: x.i.status, bg: tint(x.i.color, '22'), fg: x.i.color, due: x.i.due, btn: 'Mark done', go: () => nav.open({ kind: 'reminder', vid: x.v.id, form: remEditForm(x.r) }), act: () => nav.open({ kind: 'record', vid: x.v.id, form: remForm(x.r, calc.stats(x.v).odo, calc.TODAY) }) }
+                : (() => { const open = () => { nav.go({ view: 'car', activeId: x.v.id, sec: 'board' }); nav.open({ kind: 'card', vid: x.v.id, form: cardForm(x.c, x.k, (g.boards[x.v.id]?.[x.k] || []).findIndex(c => c.id === x.c.id)) }); };
+                    return { key: x.c.id, title: x.c.title, status: x.status, bg: x.blk ? x.color : tint(x.color, '22'), fg: x.blk ? '#140f05' : x.color, due: x.due, btn: 'View task', go: open, act: open }; })();
               return (
                 <div key={t.key} className="row" style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '10px 0' }}>
                   <span className="pill" style={{ minWidth: 72, textAlign: 'center', background: t.bg, color: t.fg }}>{t.status}</span>
@@ -126,7 +129,7 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
                     <span style={{ fontSize: 14, fontWeight: 500 }}>{t.title} <span style={{ fontWeight: 400, color: 'var(--mut)' }}>· {vLabel(x.v)}</span></span>
                     <span style={{ fontSize: 12, color: 'var(--mut)' }}>{t.due}</span>
                   </button>
-                  <button className="btn" onClick={t.go} style={{ boxSizing: 'border-box', height: 32, padding: '0 12px', fontSize: 12 }}><Icon n="check" s={14} w={2.2} />{t.btn}</button>
+                  <button className="btn" onClick={t.act} style={{ boxSizing: 'border-box', height: 32, padding: '0 12px', fontSize: 12 }}><Icon n="check" s={14} w={2.2} />{t.btn}</button>
                 </div>
               );
             })}

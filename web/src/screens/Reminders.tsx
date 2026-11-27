@@ -3,10 +3,12 @@ import { fdate, fmtEvery, fmtMonths, TEMPLATES, templateRem, tint, tplApplies } 
 import { Modal } from '../ui/Dialog.tsx';
 import { Icon } from '../ui/icons.tsx';
 import type { Tab } from './Car.tsx';
+import { newRemForm, remEditForm, remForm } from '../lib/actions.ts';
 
 export function Reminders({ calc, car, nav, store, me }: Tab) {
   const g = calc.g, u = calc.u;
-  const [tplOpen, setTplOpen] = useState(false);
+  const [tplOpen, setTplOpen0] = useState(!!nav.ui.tplOpen);
+  const setTplOpen = (v: boolean) => { setTplOpen0(v); if (!v && nav.ui.tplOpen) nav.go({ tplOpen: false }); };
   const odo = calc.stats(car).odo, active = calc.activeRems(car, odo);
   const done = g.reminders.filter(r => r.vid === car.id && r.done);
   const have = new Set(active.map(x => x.r.title.toLowerCase()));
@@ -16,7 +18,7 @@ export function Reminders({ calc, car, nav, store, me }: Tab) {
   return <>
     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <button className="btn" onClick={() => setTplOpen(true)} style={{ padding: '0 16px', fontWeight: 500 }}><Icon n="clipboard" s={15} />Add from template</button>
-      <button className="btn-p" onClick={nav.soon}><Icon n="plus" s={15} w={2.2} />New reminder</button>
+      <button className="btn-p" onClick={() => nav.open({ kind: 'reminder', vid: car.id, form: newRemForm() })}><Icon n="plus" s={15} w={2.2} />New reminder</button>
     </div>
 
     {tplOpen && (
@@ -51,10 +53,10 @@ export function Reminders({ calc, car, nav, store, me }: Tab) {
           <div key={r.id} className="card" style={{ gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <span className="pill" style={{ background: tint(i.color, '22'), color: i.color, marginRight: 'auto' }}>{i.status}</span>
-              <button className="plain to-up" onClick={nav.soon} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mut)' }}><Icon n="check" s={14} w={2.2} />Mark done</button>
+              <button className="plain to-up" onClick={() => nav.open({ kind: 'record', vid: car.id, form: remForm(r, odo, calc.TODAY) })} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mut)' }}><Icon n="check" s={14} w={2.2} />Mark done</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <button className="plain to-acc" onClick={nav.soon} title="Edit reminder" style={{ fontWeight: 600, fontSize: 17 }}>{r.title}</button>
+              <button className="plain to-acc" onClick={() => nav.open({ kind: 'reminder', vid: car.id, form: remEditForm(r) })} title="Edit reminder" style={{ fontWeight: 600, fontSize: 17 }}>{r.title}</button>
               <div style={{ fontSize: 12, color: 'var(--mut)', display: 'flex', alignItems: 'center', gap: 5 }}>{repeat}</div>
             </div>
             <div title="Time used since last done" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -63,13 +65,13 @@ export function Reminders({ calc, car, nav, store, me }: Tab) {
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 12, color: 'var(--mut)', flex: 1 }}>{i.due}</span>
-              <button className="plain ghost" onClick={nav.soon} title="Edit reminder" style={{ height: 26, padding: '0 6px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}><Icon n="pencil" s={14} />Edit</button>
+              <button className="plain ghost" onClick={() => nav.open({ kind: 'reminder', vid: car.id, form: remEditForm(r) })} title="Edit reminder" style={{ height: 26, padding: '0 6px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}><Icon n="pencil" s={14} />Edit</button>
               <button className="plain ghost-del" onClick={() => del(r.id, r.title, 'will stop repeating and be removed. Past service entries stay.')} title="Delete reminder" aria-label="Delete reminder" style={{ height: 26, padding: '0 6px', borderRadius: 7, display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--mut)' }}><Icon n="trash" s={14} /><span /></button>
             </div>
           </div>
         );
       })}
-      <button className="dashed" onClick={nav.soon} style={{ borderRadius: 20, padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 140 }}><Icon n="plus" />New reminder</button>
+      <button className="dashed" onClick={() => nav.open({ kind: 'reminder', vid: car.id, form: newRemForm() })} style={{ borderRadius: 20, padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 140 }}><Icon n="plus" />New reminder</button>
     </div>
 
     {done.length > 0 && <>

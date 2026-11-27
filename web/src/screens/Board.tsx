@@ -1,6 +1,8 @@
 import { type DragEvent, useState } from 'react';
 import { type Col, COLS, days, DRIVE, fdate, moveCard, type Part, TCOL, tint } from '../lib/model.ts';
 import { Icon } from '../ui/icons.tsx';
+import { cardForm, newCardForm } from '../lib/actions.ts';
+import { blankRecord } from '../ui/Dialogs.tsx';
 import type { Tab } from './Car.tsx';
 
 const PRIO: Record<string, string> = { High: '#f2685f', Medium: '#e8b04b', Low: '#8d9099' };
@@ -56,7 +58,7 @@ export function Board({ calc, car, nav, store, me, narrow }: Tab & { narrow: boo
               <span style={{ fontWeight: 600, fontSize: 14 }}>{label}</span>
               <span className="mono" style={{ fontSize: 11, color: 'var(--mut)', background: 'var(--card2)', padding: '2px 7px', borderRadius: 999 }}>{board[col].length}</span>
               <span className="mono" style={{ fontSize: 11, color: 'var(--mut)', marginLeft: 'auto' }}>{list.length ? calc.money(list.reduce((a, x) => a + (+x.est || 0), 0)) : ''}</span>
-              <button className="plain ghost" onClick={nav.soon} title="Add card" aria-label={`Add card to ${label}`} style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={15} /></button>
+              <button className="plain ghost" onClick={() => nav.open({ kind: 'card', vid: car.id, form: newCardForm(col) })} title="Add card" aria-label={`Add card to ${label}`} style={{ width: 26, height: 26, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={15} /></button>
             </div>
             <div style={{ padding: '4px 10px 12px', display: 'flex', flexDirection: 'column', gap: 8, flex: 1 }}>
               {list.map((cd, i) => {
@@ -65,7 +67,7 @@ export function Board({ calc, car, nav, store, me, narrow }: Tab & { narrow: boo
                 const by = g.users.find(u => u.id === cd.assignee);
                 return <div key={cd.id} style={{ display: 'contents' }}>
                   {showAt(col, i) && line}
-                  <div className="task" draggable role="button" tabIndex={0} aria-label={cd.title} onClick={nav.soon} onKeyDown={e => e.key === 'Enter' && nav.soon()}
+                  <div className="task" draggable role="button" tabIndex={0} aria-label={cd.title} onClick={() => nav.open({ kind: 'card', vid: car.id, form: cardForm(cd, col, board[col].indexOf(cd)) })} onKeyDown={e => e.key === 'Enter' && nav.open({ kind: 'card', vid: car.id, form: cardForm(cd, col, board[col].indexOf(cd)) })}
                     onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', cd.id); setTimeout(() => setDrag({ id: cd.id, col }), 0); }}
                     onDragEnd={() => { setDrag(null); setDrop(null); }}
                     onDragOver={e => { if (!drag) return; const r = e.currentTarget.getBoundingClientRect(); over(col, e.clientY < r.top + r.height / 2 ? i : i + 1)(e); }}
@@ -86,7 +88,7 @@ export function Board({ calc, car, nav, store, me, narrow }: Tab & { narrow: boo
                       {notes > 0 && <span title="Updates" className="mono" style={{ display: 'flex', alignItems: 'center', gap: 3, color: 'var(--mut)' }}><Icon n="chat" s={12} />{notes}</span>}
                       {ps.length > 0 && <span title={`${rd} of ${ps.length} parts in hand`} className="mono" style={{ display: 'flex', alignItems: 'center', gap: 3, color: all ? 'var(--up)' : 'var(--mut)' }}><Icon n="box" s={12} />{all && col !== 'done' ? 'Parts ready' : `${rd}/${ps.length}`}</span>}
                       {by && <span title={'Assigned to ' + by.name} style={{ marginLeft: 'auto', width: 20, height: 20, flex: 'none', borderRadius: '50%', background: by.color, color: '#0d0e10', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>{by.name[0].toUpperCase()}</span>}
-                      {col === 'done' && !cd.logged && <button className="plain" onClick={e => { e.stopPropagation(); nav.soon(); }} style={{ marginLeft: 'auto', color: 'var(--acc)', fontWeight: 500 }}>Log it</button>}
+                      {col === 'done' && !cd.logged && <button className="plain" onClick={e => { e.stopPropagation(); nav.open({ kind: 'record', vid: car.id, form: blankRecord(calc, car.id, { type: cd.type === 'Repair' ? 'Repair' : cd.type === 'Maintenance' ? 'Service' : 'Upgrade', title: cd.title, cost: String(cd.est || ''), fromCard: cd.id, usedParts: g.parts.filter(p => p.cardId === cd.id && !p.recId).map(p => p.id) }) }); }} style={{ marginLeft: 'auto', color: 'var(--acc)', fontWeight: 500 }}>Log it</button>}
                       {col === 'done' && cd.logged && <span style={{ marginLeft: 'auto', color: 'var(--up)' }}>In history</span>}
                     </div>
                   </div>
