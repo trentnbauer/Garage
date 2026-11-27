@@ -8,7 +8,10 @@ import { createApp } from './index.js';
 import { codeAt } from './totp.js';
 
 test('sign-in, saving and PIN rules', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), app = createApp(db, dir);
+  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), started = [], fakeRun = { start: t => started.push(t), stop: () => started.push('stop'), state: () => ({ status: started.at(-1) === 'RUNTOK' ? 'connected' : 'stopped', since: null, error: null, logs: ['INF hi'] }) };
+  // Cloudflare answers every call; the token call returns the run token.
+  const cfFetch = async url => ({ status: 200, json: async () => ({ success: true, result: url.endsWith('/token') ? 'RUNTOK' : url.includes('/zones?') ? [{ id: 'z' }] : url.endsWith('cfd_tunnel?name=Garage&is_deleted=false') ? [{ id: 't' }] : /\/(access\/policies|access\/apps|dns_records\?)/.test(url) && !/POST/.test(url) ? [] : { id: 'p' } }) });
+  const app = createApp(db, dir, { tunnel: fakeRun, cfFetch });
   await new Promise(r => app.listen(0, r));
   t.after(() => { app.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   const base = `http://localhost:${app.address().port}`;
@@ -118,4 +121,34 @@ test('sign-in, saving and PIN rules', async t => {
   assert.equal(st3.garage.smtp.port, 587); // wrong type ignored
   assert.equal(JSON.stringify(st3).includes('sk-secret-123') || JSON.stringify(st3).includes('smtp-secret-456'), false);
   assert.equal((await call('POST', '/api/ai', { prompt: 'x'.repeat(40001) }, sam.cookie)).status, 400);
+
+  // Cloudflare tunnel: admins only, checks input, keeps the token out of state, starts and stops cloudflared.
+  const T = '/api/admin/tunnel';
+  assert.equal((await call('PUT', T, { enabled: true }, sam.cookie)).status, 403);
+  assert.equal((await call('PUT', T, { enabled: true }, alexAdmin.cookie)).status, 400);
+  assert.match((await call('PUT', T, { accountId: 'nope' }, alexAdmin.cookie)).json.error, /account ID/);
+  assert.match((await call('PUT', T, { appUrl: 'https://x.com/path' }, alexAdmin.cookie)).json.error, /no path/);
+  assert.equal((await call('PUT', T, { accountId: 'A'.repeat(32), token: 'cf-secret-token-0123456789-abcdefgh', appUrl: 'garage.example.com' }, alexAdmin.cookie)).status, 200);
+  assert.equal((await call('PUT', T, { enabled: true }, alexAdmin.cookie)).status, 200);
+  assert.deepEqual(started.filter(x => x !== 'stop'), ['RUNTOK']);
+  const st4 = (await call('GET', '/api/state', null, alexAdmin.cookie)).json;
+  assert.deepEqual([st4.garage.tunnel.appUrl, st4.garage.tunnel.hasToken, st4.garage.tunnel.status, !!st4.garage.tunnel.appliedAt], ['https://garage.example.com', true, 'connected', true]);
+  assert.equal(/cf-secret-token|RUNTOK/.test(JSON.stringify(st4)), false);
+  assert.deepEqual((await call('GET', T, null, alexAdmin.cookie)).json.logs, ['INF hi']);
+  assert.equal((await call('PUT', T, { token: null }, alexAdmin.cookie)).status, 200);
+  assert.equal(started.at(-1), 'stop');
+  assert.equal((await call('GET', '/api/state', null, alexAdmin.cookie)).json.garage.tunnel.enabled, false);
+});
+
+test('Docker variables set up and run the tunnel on start', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), started = [];
+  const fakeRun = { start: t => started.push(t), stop: () => {}, state: () => ({ status: 'stopped', logs: [] }) };
+  const cfFetch = async url => ({ status: 200, json: async () => ({ success: true, result: url.endsWith('/token') ? 'RUNTOK' : url.includes('/zones?') ? [{ id: 'z' }] : /\?|\/access\/(apps|policies)$/.test(url) ? [] : { id: 'x' } }) });
+  createApp(db, dir, { tunnel: fakeRun, cfFetch, env: { CLOUDFLARE_API_TOKEN: 't'.repeat(40), CLOUDFLARE_ACCOUNT_ID: 'b'.repeat(32), APP_HOSTNAME: 'garage.example.com', ACCESS_EMAILS: 'a@x.com,b@x.com' } });
+  for (let i = 0; i < 50 && !started.length; i++) await new Promise(ok => setTimeout(ok, 10));
+  assert.deepEqual(started, ['RUNTOK']);
+  assert.deepEqual([db.read('tunnel').appUrl, db.read('tunnel').allow], ['https://garage.example.com', 'a@x.com\nb@x.com']);
+  createApp(db, dir, { tunnel: fakeRun, env: { TUNNEL_TOKEN: 'HAND' } });
+  assert.equal(started.at(-1), 'HAND');
+  db.close(); rmSync(dir, { recursive: true, force: true });
 });

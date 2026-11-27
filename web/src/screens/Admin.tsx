@@ -3,6 +3,7 @@ import type { Nav } from '../App.tsx';
 import type { Calc, User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
 import { AiTab, aiStatus, EmailTab, smtpStatus } from './AdminMail.tsx';
+import { TunnelTab, tunStatus } from './AdminTunnel.tsx';
 import { Back, Seg, Toggle } from './Settings.tsx';
 
 type TabKey = 'access' | 'people' | 'ai' | 'email' | 'tunnel' | 'log' | 'env';
@@ -27,7 +28,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
   const badge = (t: string, c: string) => ({ t, bg: c + '22', fg: c });
   const tabs: [TabKey, string, { t: string; bg: string; fg: string } | null][] = [
     ['access', 'Sign-in', null], ['people', 'People & roles', badge(String(users.length), '#8d9099')], ['ai', 'AI help', badge(...aiStatus(g))], ['email', 'Email (SMTP)', badge(...smtpStatus(g))],
-    ['tunnel', 'Cloudflare tunnel', badge('Stopped', '#8d9099')], ['log', 'Activity log', null], ['env', 'Export .env', null]];
+    ['tunnel', 'Cloudflare tunnel', badge(...tunStatus(g))], ['log', 'Activity log', null], ['env', 'Export .env', null]];
   const log = (g.log || []).filter(l => !/^(signed in|signed out)$/.test(l.text)), shown = all ? log.slice(0, 100) : log.slice(0, 12);
   const who = (id: string | null) => g.users.find(u => u.id === id) || { name: 'Someone', color: '#8d9099' };
   const carName = (id: string | null) => { const v = g.vehicles.find(x => x.id === id); return v ? v.nickname || v.model : ''; };
@@ -110,7 +111,8 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
 
             {tab === 'ai' && <AiTab store={store} g={g} nav={nav} />}
             {tab === 'email' && <EmailTab store={store} g={g} me={me} nav={nav} />}
-            {['tunnel', 'env'].includes(tab) && (
+            {tab === 'tunnel' && <TunnelTab store={store} g={g} nav={nav} />}
+            {tab === 'env' && (
               <div style={{ ...card, gap: 6 }}><span className="card-t">{tabs.find(t => t[0] === tab)![1]}</span><span className="mut" style={{ fontSize: 13 }}>This part of Admin settings isn’t built yet. It’s coming in the next update.</span></div>
             )}
           </div>

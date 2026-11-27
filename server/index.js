@@ -14,6 +14,7 @@
 //   PUT  /api/admin/ai {…, apiKey?: string|null}; POST /api/admin/ai/test
 //   PUT  /api/admin/smtp {…, pass?: string|null}; POST /api/admin/smtp/test { to }
 //   POST /api/ai { prompt } → { text }   (anyone signed in, while AI help is on)
+//   GET  /api/admin/tunnel → status and log; PUT /api/admin/tunnel {accountId?, token?: string|null, appUrl?, allow?, enabled?}
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -23,6 +24,7 @@ import { openDb } from './db.js';
 import { newSecret, verify as totpOk } from './totp.js';
 import { askAI } from './ai.js';
 import { sendMail } from './smtp.js';
+import { applyTunnel, hostOf, runner } from './tunnel.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -45,7 +47,7 @@ export function checkPin(pin, stored) {
 }
 const validPin = p => typeof p === 'string' && /^\d{4,8}$/.test(p);
 
-export function createApp(db, dataDir = DATA_DIR) {
+export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, env = process.env } = {}) {
   const filesDir = join(dataDir, 'files');
   // Lock a profile for a minute after 5 wrong PINs. In memory: a restart clears it.
   const fails = new Map();
@@ -57,6 +59,20 @@ export function createApp(db, dataDir = DATA_DIR) {
   const AI0 = { enabled: false, provider: 'anthropic', model: '', baseUrl: '', shareSpecs: true, shareHistory: true, shareNotes: false, shareManual: true };
   const SMTP0 = { enabled: false, host: '', port: 587, security: 'starttls', user: '', fromName: 'Garage', fromAddr: '', replyTo: '', to: '', digest: 'weekly', overdue: true, blockers: true, summary: false, signin: true };
   const aiCfg = () => ({ ...AI0, ...db.read('ai', {}) }), smtpCfg = () => ({ ...SMTP0, ...db.read('smtp', {}) });
+  // The Cloudflare API token and the tunnel's run token are secrets too.
+  const TUN0 = { enabled: false, accountId: '', appUrl: '', allow: '', appliedAt: null, error: null };
+  const tunCfg = () => ({ ...TUN0, ...db.read('tunnel', {}) });
+  const tunView = () => { const c = tunCfg(), r = tunnel.state(); return { ...c, hasToken: !!db.read('secret:cfToken', ''), service: `http://localhost:${PORT}`, status: r.status, since: r.since, runError: r.error }; };
+  const tunSetup = async prevUrl => { // returns '' or the reason it failed
+    const c = tunCfg(), tok = db.read('secret:cfToken', '');
+    if (!c.accountId || !tok) return '';
+    try {
+      const r = await applyTunnel({ ...c, prevUrl, service: `http://localhost:${PORT}` }, tok, cfFetch);
+      db.write({ tunnel: { ...c, appliedAt: new Date().toISOString(), error: null }, 'secret:tunnelRun': r.runToken });
+      return '';
+    } catch (e) { db.write({ tunnel: { ...c, error: e.message } }); return e.message; }
+  };
+  const tunSync = () => { const c = tunCfg(), run = db.read('secret:tunnelRun', ''); if (c.enabled && run) tunnel.start(run); else tunnel.stop(); };
   const pick = (b, base) => Object.fromEntries(Object.keys(base).filter(k => k in b && typeof b[k] === typeof base[k]).map(k => [k, typeof b[k] === 'string' ? b[k].slice(0, 500) : b[k]]));
   const auth = () => ({ ...AUTH0, ...db.read('auth', {}) });
   // TOTP secrets live under their own keys, never in the state sent to browsers.
@@ -67,6 +83,7 @@ export function createApp(db, dataDir = DATA_DIR) {
     g.auth = auth();
     g.ai = { ...aiCfg(), hasKey: !!db.read('secret:aiKey', '') };
     g.smtp = { ...smtpCfg(), hasPass: !!db.read('secret:smtpPass', '') };
+    g.tunnel = tunView();
     return g;
   };
   const tickets = new Map(), pending = new Map(); // second-step tickets and TOTP setups, both short-lived
@@ -251,6 +268,33 @@ export function createApp(db, dataDir = DATA_DIR) {
           log(me.id, 'sent a test email'); return send(res, 200, {});
         } catch (e) { return send(res, 400, { error: e.message }); }
       }
+      if (path === '/api/admin/tunnel' && req.method === 'GET') return send(res, 200, { ...tunView(), logs: tunnel.state().logs });
+      if (path === '/api/admin/tunnel' && req.method === 'PUT') {
+        const c = tunCfg(), nx = { ...c };
+        if (typeof b.accountId === 'string') { if (!/^[0-9a-f]{32}$/i.test(b.accountId.trim())) return send(res, 400, { error: 'That account ID doesn’t look right: it is 32 letters and numbers, from the dashboard address after dash.cloudflare.com/.' }); nx.accountId = b.accountId.trim().toLowerCase(); }
+        if (typeof b.token === 'string' && b.token.trim().length < 30) return send(res, 400, { error: 'That API token looks too short. Copy the whole token from Cloudflare.' });
+        if (typeof b.appUrl === 'string') {
+          let x = b.appUrl.trim().replace(/\/+$/, ''); if (x && !/^https?:\/\//i.test(x)) x = 'https://' + x;
+          if (x && !/^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(x)) return send(res, 400, { error: 'Use a full address on a domain in your Cloudflare account, like https://garage.example.com (https, no path).' });
+          nx.appUrl = x.toLowerCase();
+        }
+        if (typeof b.allow === 'string') nx.allow = b.allow.split(/[\s,]+/).filter(Boolean).join('\n').slice(0, 5000);
+        if (typeof b.enabled === 'boolean') nx.enabled = b.enabled;
+        const tok = typeof b.token === 'string' ? b.token.trim() : b.token === null ? '' : db.read('secret:cfToken', '');
+        if (b.token === null) { nx.enabled = false; nx.appliedAt = null; nx.error = null; }
+        if (nx.enabled && !(nx.accountId && tok)) return send(res, 400, { error: 'Save your Cloudflare account ID and API token first.' });
+        db.write({ tunnel: nx, 'secret:cfToken': tok, ...(b.token === null ? { 'secret:tunnelRun': '' } : {}) });
+        // Anything that changes what Cloudflare should hold is applied there straight away.
+        const setup = ['accountId', 'token', 'appUrl', 'allow'].some(k => typeof b[k] === 'string') || (nx.enabled && !db.read('secret:tunnelRun', ''));
+        const err = setup ? await tunSetup(c.appUrl) : '';
+        tunSync();
+        if (typeof b.token === 'string') log(me.id, 'connected a Cloudflare account');
+        if (b.token === null) log(me.id, 'removed the Cloudflare API token');
+        if (typeof b.appUrl === 'string' && nx.appUrl !== c.appUrl) log(me.id, nx.appUrl ? `set the App URL to ${hostOf(nx.appUrl)}` : 'cleared the App URL');
+        if (typeof b.allow === 'string' && nx.allow !== c.allow) { const n = nx.allow ? nx.allow.split('\n').length : 0; log(me.id, n ? `set ${n} allowed user${n === 1 ? '' : 's'} on the App URL` : 'made the App URL public'); }
+        if (typeof b.enabled === 'boolean' && b.enabled !== c.enabled) log(me.id, `${b.enabled ? 'started' : 'stopped'} the Cloudflare tunnel`);
+        return err ? send(res, 400, { error: err }) : send(res, 200, {});
+      }
       return send(res, 404, { error: 'Not found' });
     }
 
@@ -319,6 +363,13 @@ export function createApp(db, dataDir = DATA_DIR) {
     res.end(data);
   }
 
+  // Docker: the CLOUDFLARE_* variables set up and run the tunnel on every start; TUNNEL_TOKEN runs a hand-made one.
+  if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
+    const prev = tunCfg().appUrl;
+    db.write({ tunnel: { ...tunCfg(), enabled: true, accountId: env.CLOUDFLARE_ACCOUNT_ID.trim(), appUrl: env.APP_HOSTNAME ? 'https://' + hostOf(env.APP_HOSTNAME) : '', allow: (env.ACCESS_EMAILS || '').split(/[\s,]+/).filter(Boolean).join('\n') }, 'secret:cfToken': env.CLOUDFLARE_API_TOKEN.trim() });
+    tunSetup(prev).then(err => { if (err) console.error('Cloudflare tunnel setup failed:', err); tunSync(); });
+  } else if (env.TUNNEL_TOKEN) tunnel.start(env.TUNNEL_TOKEN.trim());
+  else tunSync(); // resume a tunnel that was running before a restart
   return createServer(async (req, res) => {
     const path = new URL(req.url || '/', 'http://x').pathname;
     try { if (path.startsWith('/api/')) await api(req, res, path); else await file(req, res, path); }

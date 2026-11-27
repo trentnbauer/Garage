@@ -67,8 +67,9 @@ export interface Garage {
   auth: { signins: boolean; tfaTotp?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
   /** Admin-set integrations, sent by the server. Their secrets stay there: only whether one is saved. */
-  ai?: AiCfg; smtp?: SmtpCfg;
+  ai?: AiCfg; smtp?: SmtpCfg; tunnel?: TunCfg;
 }
+export type TunCfg = { enabled: boolean; accountId: string; appUrl: string; allow: string; appliedAt: string | null; error: string | null; hasToken: boolean; status: 'stopped' | 'starting' | 'connected' | 'error'; since: string | null; runError: string | null; service: string };
 export type AiCfg = { enabled: boolean; provider: 'anthropic' | 'openai' | 'ollama'; model: string; baseUrl: string; shareSpecs: boolean; shareHistory: boolean; shareNotes: boolean; shareManual: boolean; hasKey: boolean };
 export type SmtpCfg = { enabled: boolean; host: string; port: number; security: 'starttls' | 'ssl' | 'none'; user: string; fromName: string; fromAddr: string; replyTo: string; to: string; digest: 'off' | 'daily' | 'weekly'; overdue: boolean; blockers: boolean; summary: boolean; signin: boolean; hasPass: boolean };
 
