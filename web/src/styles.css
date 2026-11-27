@@ -1,0 +1,79 @@
+/* Tokens and shared parts from the Garage UI guide. --acc/--accs/--accfg are set from the user's accent. */
+:root {
+  --bg: #0b0b0b; --frame: #0e0e0e; --card: #151515; --card2: #1d1d1d;
+  --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.12);
+  --fg: #f2f2f2; --mut: #8f8f8f; --acc: #ececec; --accs: rgba(255,255,255,.09); --accfg: #0b0b0b;
+  --up: #3fcf8e; --warn: #e8b04b; --down: #f2685f;
+  --serif: 'Newsreader Variable', 'Newsreader', serif; --mono: 'JetBrains Mono', monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: 'Geist', system-ui, sans-serif; font-size: 14px; }
+button, input, select, textarea { font-family: inherit; }
+a { color: var(--acc); } a:hover { opacity: .8; }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+option { background: #1d1d1d; }
+svg.i { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* Pages sit in a rounded frame and scroll inside it with the scrollbar hidden. */
+.frame { height: calc(100vh - 32px); width: calc(100% - 32px); max-width: 1920px; margin: 16px auto; border: 1px solid var(--line2); border-radius: 24px; background: var(--frame); overflow-y: auto; scrollbar-width: none; }
+.frame::-webkit-scrollbar, .noscroll::-webkit-scrollbar { display: none; }
+.noscroll { scrollbar-width: none; }
+.full .frame, .narrow .frame { height: 100vh; width: auto; max-width: none; margin: 0; border-color: transparent; border-radius: 0; background: transparent; }
+
+/* Buttons */
+/* Content-box like the design: a 36px bordered button is 38px tall overall. */
+.btn { all: unset; box-sizing: content-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line2); font-size: 13px; white-space: nowrap; }
+.btn:hover { background: var(--card2); }
+.btn-p { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px; border-radius: 999px; background: var(--acc); color: var(--accfg); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.btn-p:hover { filter: brightness(1.12); }
+.btn-fuel { all: unset; box-sizing: border-box; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 16px; border-radius: 999px; background: #e8b04b; color: #1a1408; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.btn-fuel:hover { background: #f0bf60; }
+.link { all: unset; cursor: pointer; font-size: 12px; color: var(--acc); }
+.plain { all: unset; box-sizing: border-box; cursor: pointer; }
+.hov:hover { background: var(--card2); }
+.dim:hover { opacity: .8; }
+
+/* Type */
+.kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--mut); }
+.label { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--mut); }
+.title { font-family: var(--serif); font-weight: 600; font-size: 40px; line-height: 1.1; }
+.mono { font-family: var(--mono); }
+.mut { color: var(--mut); }
+.rego { flex: none; font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .06em; padding: 3px 8px; border-radius: 6px; background: var(--fg); color: var(--bg); }
+
+/* Cards and fields */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; }
+.card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.card-t { font-weight: 600; font-size: 15px; }
+.row { border-top: 1px solid var(--line); }
+.field { height: 40px; width: 100%; min-width: 0; border-radius: 10px; border: 1px solid var(--line2); background: var(--card2); color: var(--fg); padding: 0 12px; font-size: 14px; }
+.pill { font-size: 11px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+
+/* Account / car menus */
+.scrim { position: fixed; inset: 0; z-index: 40; }
+.menu { position: absolute; z-index: 41; min-width: 210px; background: var(--card); border: 1px solid var(--line2); border-radius: 14px; padding: 6px; box-shadow: 0 16px 40px rgba(0,0,0,.5); display: flex; flex-direction: column; }
+.menu-i { all: unset; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; font-size: 13px; }
+.menu-i:hover { background: var(--card2); }
+.menu-i.danger { color: var(--down); }
+.menu-i.danger:hover { background: rgba(242,104,95,.1); }
+
+/* Car side nav */
+.nav-i { all: unset; box-sizing: border-box; cursor: pointer; width: 72px; padding: 9px 0 8px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; color: #a8a8a8; font-weight: 500; }
+.nav-i:hover { background: var(--card2); }
+.nav-i.on { background: var(--accs); color: var(--fg); box-shadow: inset 0 0 0 1px var(--acc); font-weight: 600; }
+.nav-i span { font-size: 12px; letter-spacing: .01em; }
+
+/* Sign-in */
+.who { all: unset; cursor: pointer; background: var(--card); border: 2px solid var(--line); border-radius: 18px; padding: 20px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.who:hover { border-color: var(--line2); }
+.who.on { border-color: var(--acc); }
+.who-add { all: unset; cursor: pointer; border: 2px dashed var(--line2); border-radius: 18px; padding: 20px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--mut); }
+.who-add:hover { color: var(--fg); border-color: var(--mut); }
+.box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+.car-card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+.car-card:hover { border-color: var(--line2); }
+.car-img { height: 190px; border-radius: 14px; overflow: hidden; position: relative; background: var(--card2); cursor: pointer; }
+.car-img:hover { filter: brightness(1.12); }
+.bar:hover { filter: brightness(1.25); }

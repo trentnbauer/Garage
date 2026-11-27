@@ -1,0 +1,10 @@
+// Builds the read-only public demo (GitHub Pages): sample data in memory, no server.
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  base: './',
+  define: { 'import.meta.env.VITE_DEMO': JSON.stringify('1') },
+  build: { outDir: 'dist-demo', rollupOptions: { input: 'demo.html' } },
+});
