@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb } from './db.js';
 import { createApp } from './index.js';
+import { codeAt } from './totp.js';
 
 test('sign-in, saving and PIN rules', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), app = createApp(db, dir);
@@ -64,4 +65,45 @@ test('sign-in, saving and PIN rules', async t => {
   assert.equal(gi.headers.get('content-type'), 'image/jpeg');
   assert.match(gi.headers.get('content-disposition'), /^inline; filename\*=UTF-8''car%20photo\.jpg/);
   assert.equal((await up(new Uint8Array(26 * 1024 * 1024), 'image/jpeg', 'big.jpg', login.cookie).catch(() => ({ status: 413 }))).status, 413);
+
+  // Admin routes are admins only; the last admin can't be demoted; sign-ins need your own PIN first.
+  const alex = await call('POST', '/api/login', { userId: alexId, pin: '5555' });
+  assert.equal((await call('PUT', '/api/admin/auth', { signins: true }, alex.cookie)).status, 403);
+  const admin = await call('POST', '/api/users', { name: 'Sam', color: '#3fcf8e' }); // a member with no PIN
+  assert.equal(admin.status, 200);
+  const u1 = login.cookie; // u1's session from earlier still works
+  assert.equal((await call('PATCH', '/api/admin/users/u1', { role: 'member' }, u1)).status, 400);
+  assert.equal((await call('PATCH', `/api/admin/users/${alexId}`, { role: 'admin' }, u1)).status, 200);
+  assert.equal((await call('PATCH', '/api/admin/users/u1', { removed: true }, u1)).status, 400);
+
+  // TOTP: set up, then sign-in needs the code after the PIN, or the code alone.
+  const start = await call('POST', '/api/totp/start', {}, u1);
+  assert.equal((await call('POST', '/api/totp/verify', { code: '000000' }, u1)).status, 400);
+  assert.equal((await call('POST', '/api/totp/verify', { code: codeAt(start.json.secret, Date.now() / 1000) }, u1)).status, 200);
+  const st2 = (await call('GET', '/api/state', null, u1)).json;
+  assert.equal(st2.garage.users.find(x => x.id === 'u1').hasTotp, true);
+  assert.equal(JSON.stringify(st2).includes(start.json.secret), false);
+  const alexAdmin = await call('POST', '/api/login', { userId: alexId, pin: '5555' }); // no app, so straight in
+  assert.ok(alexAdmin.cookie);
+  // u1 is locked after the bad PINs above, so the sign-in flow is checked with Sam.
+  const sam = await call('POST', '/api/login', { userId: admin.json.me });
+  assert.equal(sam.status, 200);
+  const samStart = await call('POST', '/api/totp/start', {}, sam.cookie);
+  await call('POST', '/api/totp/verify', { code: codeAt(samStart.json.secret, Date.now() / 1000) }, sam.cookie);
+  await call('POST', '/api/pin', { pin: '2468' }, sam.cookie);
+  const s1 = await call('POST', '/api/login', { userId: admin.json.me, pin: '2468' });
+  assert.equal(s1.json.tfa, true);
+  assert.equal(s1.cookie, '');
+  assert.equal((await call('POST', '/api/login/totp', { ticket: s1.json.ticket, code: '000000' })).status, 401);
+  const s2 = await call('POST', '/api/login/totp', { ticket: s1.json.ticket, code: codeAt(samStart.json.secret, Date.now() / 1000) });
+  assert.equal(s2.status, 200);
+  assert.ok(s2.cookie.startsWith('garage_session='));
+  const s3 = await call('POST', '/api/login', { userId: admin.json.me, code: codeAt(samStart.json.secret, Date.now() / 1000) });
+  assert.equal(s3.status, 200);
+  // Requiring two-factor stops people turning their app off.
+  assert.equal((await call('PUT', '/api/admin/auth', { tfaRequire: 'all' }, alexAdmin.cookie)).status, 200);
+  assert.equal((await call('DELETE', '/api/totp', null, sam.cookie)).status, 400);
+  // Sign-ins on needs the admin's own PIN, which Alex has.
+  assert.equal((await call('PUT', '/api/admin/auth', { signins: true }, alexAdmin.cookie)).status, 200);
+  assert.equal((await call('POST', '/api/users', { name: 'Late', color: '#3fcf8e' })).status, 403);
 });

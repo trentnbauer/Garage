@@ -16,20 +16,23 @@ export function Login({ store }: { store: Store }) {
   const [pinFor, setPinFor] = useState<string | null>(null);
   const [pin, setPin] = useState(''), [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
+  const [mode, setMode] = useState<'pin' | 'code'>('pin');
+  const [tfa, setTfa] = useState<{ ticket: string; name: string } | null>(null), [code, setCode] = useState('');
   const [nu, setNu] = useState({ name: '', pin: '', color: UCOLORS[users.length % UCOLORS.length] });
   const needPin = (u: typeof users[0]) => on || u.role === 'admin';
   const px = users.find(u => u.id === pinFor), setting = !!px && !px.hasPin;
+  const canCode = !!px && !!px.hasTotp && g.auth.tfaTotp !== false && !setting;
+  const result = (r: { error?: string; ticket?: string }, name: string) => { if (r.ticket) { setTfa({ ticket: r.ticket, name }); setPinFor(null); setCode(''); setErr(''); } else if (r.error) { setErr(r.error); setPin(''); } };
 
   const pick = async (u: typeof users[0]) => {
     setAdding(false); setErr('');
-    if (u.hasPin || needPin(u)) { setPinFor(u.id); setPin(''); return; }
-    setErr(await store.login(u.id));
+    if (u.hasPin || needPin(u)) { setPinFor(u.id); setPin(''); setMode('pin'); setTfa(null); return; }
+    result(await store.login(u.id, {}), u.name);
   };
   const submitPin = async (e: FormEvent) => {
     e.preventDefault(); if (!px) return;
     if (setting && pin.length < 4) { setErr('Use at least 4 digits'); return; }
-    const r = await store.login(px.id, setting ? undefined : pin, setting ? pin : undefined);
-    if (r) { setErr(r); setPin(''); }
+    result(await store.login(px.id, mode === 'code' ? { code: pin } : setting ? { newPin: pin } : { pin }), px.name);
   };
   const submitAdd = async (e: FormEvent) => {
     e.preventDefault(); const name = nu.name.trim(); if (!name || on) return;
@@ -87,12 +90,26 @@ export function Login({ store }: { store: Store }) {
 
           {px && (
             <form className="box" onSubmit={submitPin}>
-              <span style={{ fontSize: 14 }}>{setting ? 'Create a PIN for' : 'PIN for'} <b>{px.name}</b></span>
+              <span style={{ fontSize: 14 }}>{mode === 'code' ? 'Authenticator code for' : setting ? 'Create a PIN for' : 'PIN for'} <b>{px.name}</b></span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <input className="field" type="password" inputMode="numeric" autoFocus autoComplete={setting ? 'new-password' : 'current-password'} placeholder="PIN" aria-label="PIN" value={pin} onChange={e => { setPin(digits(e.target.value)); setErr(''); }} style={{ fontFamily: 'var(--mono)', letterSpacing: '.3em' }} />
+                <input className="field" type={mode === 'code' ? 'text' : 'password'} inputMode="numeric" autoFocus autoComplete={mode === 'code' ? 'one-time-code' : setting ? 'new-password' : 'current-password'} placeholder={mode === 'code' ? '6-digit code' : 'PIN'} aria-label={mode === 'code' ? 'Authenticator code' : 'PIN'} value={pin} onChange={e => { setPin(digits(e.target.value).slice(0, mode === 'code' ? 6 : 8)); setErr(''); }} style={{ fontFamily: 'var(--mono)', letterSpacing: '.3em' }} />
                 <button type="submit" className="btn-p" style={{ height: 40, padding: '0 18px' }}>Sign in</button>
               </div>
               {err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
+              {canCode && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', paddingTop: 4 }}><span style={{ fontSize: 12, color: 'var(--mut)' }}>Or use</span>
+                <button type="button" className="btn" style={{ boxSizing: 'border-box', height: 30, padding: '0 12px', fontSize: 12 }} onClick={() => { setMode(mode === 'code' ? 'pin' : 'code'); setPin(''); setErr(''); }}>{mode === 'code' ? 'PIN' : 'Authenticator code'}</button></div>}
+            </form>
+          )}
+
+          {tfa && (
+            <form className="box" style={{ border: '1px solid var(--acc)' }} onSubmit={async e => { e.preventDefault(); const r = await store.loginTotp(tfa.ticket, code); if (r) { setErr(r); setCode(''); } }}>
+              <span style={{ fontSize: 14 }}>Two-factor for <b>{tfa.name}</b></span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input className="field" inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="6-digit code" aria-label="Authenticator code" value={code} onChange={e => { setCode(digits(e.target.value).slice(0, 6)); setErr(''); }} style={{ flex: 1, fontFamily: 'var(--mono)', letterSpacing: '.2em' }} />
+                <button type="submit" className="btn-p" style={{ height: 40 }}>Verify</button>
+              </div>
+              {err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
+              <button type="button" className="plain" onClick={() => { setTfa(null); setErr(''); }} style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--mut)' }}>Cancel</button>
             </form>
           )}
 
@@ -116,7 +133,7 @@ export function Login({ store }: { store: Store }) {
           {!px && !adding && err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
 
           <span style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.5 }}>
-            {on ? 'Everyone signs in with their PIN. Ask an admin to add you.' : 'Sign-ins are off: anyone here can pick or make a profile. Admin profiles still need a PIN. Turn sign-ins on in Admin settings before opening Garage to the internet.'}
+            {on ? 'Everyone signs in with their PIN or an authenticator code. Ask an admin to add you.' : 'Sign-ins are off: anyone here can pick or make a profile. Admin profiles still need a PIN. Turn sign-ins on in Admin settings before opening Garage to the internet.'}
           </span>
         </div>
       </div>

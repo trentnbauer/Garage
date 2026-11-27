@@ -53,18 +53,18 @@ export interface ShelfItem { id: string; name: string; partNo: string; qty: numb
 
 export interface User {
   id: string; name: string; email?: string; provider?: string; color: string; role: 'admin' | 'member'; removed?: boolean;
-  hasPin?: boolean; // the PIN itself never leaves the server
+  hasPin?: boolean; hasTotp?: boolean; // the PIN and TOTP secret never leave the server
 }
 
 export interface Settings {
   units: Units; currency: string; soonDays: number; soonDist: number; accent: string; fullWidth: boolean;
-  showTotals: boolean; defaultSec: string; showDoneCol: boolean; hideDoneDays: number;
+  showTotals: boolean; defaultSec: string; showDoneCol: boolean; hideDoneDays: number; compact?: boolean;
 }
 
 export interface Garage {
   vehicles: Vehicle[]; records: Rec[]; reminders: Reminder[]; parts: Part[]; boards: Record<string, Board>;
   notes: Record<string, string>; shelf: ShelfItem[]; users: User[]; settings: Settings;
-  auth: { signins: boolean };
+  auth: { signins: boolean; tfaTotp?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
 }
 
@@ -358,3 +358,22 @@ export const SPEC_DEF: Record<string, [string, string, [string, string, string, 
   electrical: ['Electrical', 'Battery, charging and fuses', [['item', 'Item', 'Battery', 1.2], ['value', 'Spec', 'e.g. 12 V 45 Ah, group 51R', 1.6]], false, 'electrical spec', ['Battery', 'Alternator output', 'Main fuse']],
   dims: ['Dimensions & weights', 'Handy when towing or shipping', [['item', 'Measurement', 'Kerb weight', 1.3], ['value', 'Value', 'e.g. 960 kg', 1.1]], false, 'measurement', ['Kerb weight', 'Wheelbase', 'Length × width', 'Towing capacity']],
 };
+
+/** Reminders and task target dates as an iCalendar file. Distance-only reminders use the estimated date. */
+export function buildIcs(c: Calc) {
+  const esc = (t: string) => String(t || '').replace(/[\\;,]/g, m => '\\' + m).replace(/\n/g, '\\n'), d8 = (d: string) => d.replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const ev: [string, string, string, string][] = [];
+  c.g.vehicles.filter(v => !v.sold).forEach(v => {
+    const nm = v.nickname || v.model, odo = c.stats(v).odo;
+    c.g.reminders.filter(r => r.vid === v.id && !r.done).forEach(r => {
+      let d = r.dueDate, est = false;
+      if (!d && r.dueOdo !== '' && r.dueOdo != null) { d = addDays(c.TODAY, Math.max(0, Math.round((+r.dueOdo - odo) / c.kmPerDay(v.id)))); est = true; }
+      if (d) ev.push(['rem-' + r.id, d, `${r.title} · ${nm}`, (est ? 'Estimated from average distance. Due at ' + c.dist(r.dueOdo) + '. ' : '') + 'Garage reminder']);
+    });
+    (Object.entries(c.g.boards[v.id] || {}) as [Col, Task[]][]).forEach(([k, l]) => k !== 'done' && l.forEach(t => t.due && ev.push(['task-' + t.id, t.due, `${t.title} · ${nm}`, 'Build board task · ' + COLNAME[k]])));
+  });
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Garage//Reminders//EN', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Garage',
+    ...ev.flatMap(([id, d, t, desc]) => ['BEGIN:VEVENT', 'UID:' + id + '@garage', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + d8(d), 'DTEND;VALUE=DATE:' + d8(addDays(d, 1)), 'SUMMARY:' + esc(t), 'DESCRIPTION:' + esc(desc), 'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(t), 'TRIGGER:-P1D', 'END:VALARM', 'END:VEVENT']),
+    'END:VCALENDAR'].join('\r\n') + '\r\n';
+}

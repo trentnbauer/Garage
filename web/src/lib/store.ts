@@ -9,7 +9,11 @@ type Loaded = { garage: Garage; me: string | null };
 export type Store = {
   g: Garage | null; me: string | null; error: string;
   update: (fn: (g: Garage) => Garage) => void;
-  login: (userId: string, pin?: string, newPin?: string) => Promise<string>; // '' on success, else the reason
+  /** Sign in. `ticket` means a second step is needed: send the authenticator code to loginTotp. */
+  login: (userId: string, cred: { pin?: string; newPin?: string; code?: string }) => Promise<{ error?: string; ticket?: string }>;
+  loginTotp: (ticket: string, code: string) => Promise<string>; // '' on success, else the reason
+  /** Account and admin calls; reloads the garage after a change. */
+  api: (method: string, path: string, body?: unknown) => Promise<{ ok: boolean; json: Record<string, unknown> & { error?: string } }>;
   addUser: (name: string, color: string, pin: string) => Promise<string>;
   logout: () => void;
 };
@@ -38,6 +42,8 @@ export function useStore(): Store {
       if (!w.ok) { setError(w.json.error || 'Couldn’t set up the garage.'); return; }
       return load();
     }
+    // Anything still queued was built on the old copy; the fresh copy replaces it.
+    window.clearTimeout(timer.current); latest.current = null;
     version.current = r.json.version;
     setS({ garage: fill(r.json.garage), me: r.json.me });
   }, []);
@@ -45,6 +51,7 @@ export function useStore(): Store {
 
   const save = useCallback(async () => {
     const g = latest.current; if (!g || DEMO) return;
+    latest.current = null;
     const r = await call('PUT', '/api/state', { version: version.current, garage: g });
     if (r.ok) { version.current = r.json.version; setError(''); }
     else if (r.status === 409) { setError(r.json.error); load(); }
@@ -60,13 +67,30 @@ export function useStore(): Store {
     });
   }, [save]);
 
-  const login = useCallback(async (userId: string, pin?: string, newPin?: string) => {
-    if (DEMO) { setS(cur => cur && { ...cur, me: userId }); return ''; }
-    const r = await call('POST', '/api/login', { userId, pin, newPin });
+  const login = useCallback(async (userId: string, cred: { pin?: string; newPin?: string; code?: string }) => {
+    if (DEMO) { setS(cur => cur && { ...cur, me: userId }); return {}; }
+    const r = await call('POST', '/api/login', { userId, ...cred });
+    if (!r.ok) return { error: r.json.error || 'Couldn’t sign in' };
+    if (r.json.tfa) return { ticket: r.json.ticket as string };
+    await load();
+    return {};
+  }, [load]);
+
+  const loginTotp = useCallback(async (ticket: string, code: string) => {
+    const r = await call('POST', '/api/login/totp', { ticket, code });
     if (!r.ok) return r.json.error || 'Couldn’t sign in';
     await load();
     return '';
   }, [load]);
+
+  const api = useCallback(async (method: string, path: string, body?: unknown) => {
+    if (DEMO) return { ok: false, json: { error: 'The demo doesn’t save account or admin changes.' } };
+    // Send any queued edit first, so the reload after this call can't drop it.
+    if (latest.current) { window.clearTimeout(timer.current); await save(); }
+    const r = await call(method, path, body).catch(() => ({ ok: false, status: 0, json: { error: 'Can’t reach the Garage server.' } }));
+    if (r.ok) await load();
+    return { ok: r.ok, json: r.json };
+  }, [load, save]);
 
   const addUser = useCallback(async (name: string, color: string, pin: string) => {
     if (DEMO) {
@@ -85,7 +109,7 @@ export function useStore(): Store {
     if (!DEMO) call('POST', '/api/logout').catch(() => {});
   }, []);
 
-  return { g: s?.garage || null, me: s?.me || null, error, update, login, addUser, logout };
+  return { g: s?.garage || null, me: s?.me || null, error, update, login, loginTotp, api, addUser, logout };
 }
 
 /** Per-device UI state (which screen is open). Optional: a blocked or empty storage just starts at home. */

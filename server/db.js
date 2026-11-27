@@ -23,6 +23,7 @@ export function openDb(dataDir) {
     write(entries) { tx(() => { for (const [k, v] of Object.entries(entries)) put.run(k, JSON.stringify(v)); }); },
     pinHash: id => db.prepare('SELECT hash FROM pins WHERE user_id = ?').get(id)?.hash || null,
     setPin: (id, hash) => db.prepare('INSERT INTO pins (user_id, hash) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET hash = excluded.hash').run(id, hash),
+    clearPin: id => db.prepare('DELETE FROM pins WHERE user_id = ?').run(id),
     hasPin: id => !!db.prepare('SELECT 1 FROM pins WHERE user_id = ?').get(id),
     session: token => db.prepare('SELECT user_id FROM sessions WHERE token = ?').get(token)?.user_id || null,
     addSession: (token, id) => db.prepare('INSERT INTO sessions (token, user_id, created) VALUES (?, ?, ?)').run(token, id, new Date().toISOString()),

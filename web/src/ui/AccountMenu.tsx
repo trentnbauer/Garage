@@ -3,7 +3,7 @@ import type { User } from '../lib/model.ts';
 import { Icon } from './icons.tsx';
 
 /** Avatar pill with the account menu. `big` is the home-page size (44px), otherwise the car header size (36px). */
-export function AccountMenu({ me, big, onSwitch, onSignOut }: { me: User; big?: boolean; onSwitch: () => void; onSignOut: () => void }) {
+export function AccountMenu({ me, big, onSwitch, onSignOut, go }: { me: User; big?: boolean; onSwitch: () => void; onSignOut: () => void; go: (view: 'settings' | 'admin') => void }) {
   const [open, setOpen] = useState(false);
   const av = big ? 34 : 28;
   return (
@@ -21,7 +21,8 @@ export function AccountMenu({ me, big, onSwitch, onSignOut }: { me: User; big?: 
             <div style={{ fontSize: 13, fontWeight: 600 }}>{me.name}</div>
             <div style={{ fontSize: 11, color: 'var(--mut)' }}>{(me.role === 'admin' ? 'Admin' : 'Member') + ' · this device'}</div>
           </div>
-          {/* Settings and Admin settings join this menu when those screens are built. */}
+          {me.role === 'admin' && <button className="menu-i" onClick={() => { setOpen(false); go('admin'); }}><Icon n="shield" />Admin settings</button>}
+          <button className="menu-i" onClick={() => { setOpen(false); go('settings'); }}><Icon n="gear" />Settings</button>
           <button className="menu-i" onClick={() => { setOpen(false); onSwitch(); }}><Icon n="users" />Switch person</button>
           <button className="menu-i danger" onClick={() => { setOpen(false); onSignOut(); }}><Icon n="logout" />Sign out of this device</button>
         </div>

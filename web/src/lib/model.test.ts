@@ -77,3 +77,12 @@ test('CSV quotes commas, quotes and newlines', async () => {
   const { csv } = await import('./model.ts');
   assert.equal(csv([['a', 'b,c', 'say "hi"', 'x\ny', null]]), 'a,"b,c","say ""hi""","x\ny",');
 });
+
+test('calendar feed has dated and estimated reminders, escaped', async () => {
+  const { buildIcs } = await import('./model.ts');
+  const ics = buildIcs(c);
+  assert.match(ics, /^BEGIN:VCALENDAR\r\n/);
+  assert.match(ics, /SUMMARY:Coolant flush · Mariner\r\nDESCRIPTION:Garage reminder/);
+  assert.match(ics, /DTSTART;VALUE=DATE:20261115/);
+  assert.match(ics, /SUMMARY:Oil change · E30\r\nDESCRIPTION:Estimated from average distance\. Due at 189\\,000 km\. Garage reminder/);
+});
