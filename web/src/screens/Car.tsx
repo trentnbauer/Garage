@@ -101,7 +101,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
                 </span>
               </button>
             )}
-            <AccountMenu me={me} onSwitch={store.logout} onSignOut={store.logout} />
+            <AccountMenu me={me} onSwitch={store.logout} onSignOut={store.logout} go={view => nav.go({ view })} />
             <button className="btn mono" onClick={() => nav.open({ kind: 'odo', vid: car.id, form: odoForm(calc, car.id) })} title="Update the odometer"><Icon n="gauge" s={15} />{Number(st.odo).toLocaleString()} {calc.u}</button>
             {!narrow && <button className="btn-fuel" onClick={() => nav.open({ kind: 'record', vid: car.id, form: fuelRecord(calc, car.id) })}><Icon n="fuel" s={15} />Add fill-up</button>}
             <button className="btn-p" onClick={() => nav.open({ kind: 'record', vid: car.id, form: blankRecord(calc, car.id) })}><Icon n="plus" w={2.2} />Log service</button>

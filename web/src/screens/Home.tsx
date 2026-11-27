@@ -39,7 +39,7 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
           </div>
           <div style={{ display: 'flex', gap: 8, flex: 'none' }}>
             <button className="plain dim" onClick={() => nav.open({ kind: 'vehicle', form: vehicleForm() })} title="Add vehicle" aria-label="Add vehicle" style={{ width: 34, height: 34, margin: '5px 0', borderRadius: '50%', background: 'var(--fg)', color: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="plus" s={20} w={2.2} /></button>
-            <AccountMenu big me={me} onSwitch={store.logout} onSignOut={store.logout} />
+            <AccountMenu big me={me} onSwitch={store.logout} onSignOut={store.logout} go={view => nav.go({ view })} />
           </div>
         </div>
 

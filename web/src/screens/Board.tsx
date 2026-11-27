@@ -79,7 +79,7 @@ export function Board({ calc, car, nav, store, me, narrow }: Tab & { narrow: boo
                       {i > 0 && <button className="plain task-top" onClick={e => { e.stopPropagation(); move(cd.id, col, 0); }} title="Move to top" aria-label="Move to top" style={{ width: 24, height: 24, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mut)' }}><Icon n="totop" s={14} /></button>}
                     </div>
                     <div style={{ fontWeight: 500, fontSize: 14, lineHeight: 1.35, textDecoration: col === 'done' ? 'line-through' : 'none', color: col === 'done' ? 'var(--mut)' : 'var(--fg)' }}>{cd.title}</div>
-                    {cd.note && <div style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.4 }}>{cd.note}</div>}
+                    {cd.note && !set.compact && <div style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.4 }}>{cd.note}</div>}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--mut)' }}><span style={{ width: 6, height: 6, borderRadius: '50%', background: PRIO[cd.priority] }} />{cd.priority}</span>
                       <span className="mono">{cd.est ? calc.money(cd.est) : ''}</span>

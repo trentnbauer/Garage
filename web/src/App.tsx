@@ -4,10 +4,12 @@ import { useStore, usePersisted } from './lib/store.ts';
 import { Login } from './screens/Login.tsx';
 import { Home } from './screens/Home.tsx';
 import { Car } from './screens/Car.tsx';
+import { Settings } from './screens/Settings.tsx';
+import { Admin } from './screens/Admin.tsx';
 import { type Ask, Confirm } from './ui/Dialog.tsx';
 import { type Dlg, Dialogs } from './ui/Dialogs.tsx';
 
-export type Ui = { view: 'home' | 'car'; activeId: string; sec: Sec; tplOpen?: boolean };
+export type Ui = { view: 'home' | 'car' | 'settings' | 'admin'; activeId: string; sec: Sec; tplOpen?: boolean };
 export type Nav = { ui: Ui; go: (p: Partial<Ui>) => void; soon: () => void; ask: (a: Ask) => void; open: (d: Dlg) => void };
 
 export function App() {
@@ -30,11 +32,15 @@ export function App() {
   const meU = g.users.find(u => u.id === me && !u.removed);
   const nav: Nav = { ui, go: p => setUi(u => ({ ...u, ...p })), soon: () => setToast('That part of Garage isn’t built yet.'), ask: setAsk, open: setDlg };
   const calc = new Calc(g);
+  // Two-factor required but not set up: Settings until it is.
+  const nag = !!meU && g.auth.tfaTotp !== false && !meU.hasTotp && (g.auth.tfaRequire === 'all' || (g.auth.tfaRequire === 'admins' && meU.role === 'admin'));
   const car = g.vehicles.find(v => v.id === ui.activeId) || g.vehicles[0];
 
   return (
     <div className={cls} style={rootStyle}>
       {!meU ? <Login store={store} />
+        : nag || ui.view === 'settings' ? <Settings store={store} me={meU} calc={calc} nav={nav} narrow={narrow} nag={nag} />
+        : ui.view === 'admin' && meU.role === 'admin' ? <Admin store={store} me={meU} calc={calc} nav={nav} narrow={narrow} />
         : ui.view === 'car' && car ? <Car store={store} me={meU} calc={calc} car={car} nav={nav} narrow={narrow} />
         : <Home store={store} me={meU} calc={calc} nav={nav} narrow={narrow} />}
       {dlg && meU && <Dialogs dlg={dlg} setDlg={setDlg} calc={calc} store={store} me={meU} nav={nav} narrow={narrow} />}

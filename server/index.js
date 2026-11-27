@@ -6,12 +6,18 @@
 //   POST /api/users          { name, color, pin? } add a person (only while sign-ins are off)
 //   POST /api/files          raw body, X-File-Name header → { id, name, type, size, src, at }; needs a session
 //   GET  /api/files/:id      the file; needs a session
+//   POST /api/login/totp     { ticket, code } second step when the profile has an authenticator app
+//   POST /api/me             { name?, color? }       POST|DELETE /api/pin { pin }
+//   POST /api/totp/start → { secret, uri }; POST /api/totp/verify { code }; DELETE /api/totp
+//   PUT  /api/admin/auth { signins?, tfaTotp?, tfaRequire? }; POST /api/admin/users { name, role };
+//   PATCH /api/admin/users/:id { role?, removed?, resetPin? }   (admins only)
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
+import { newSecret, verify as totpOk } from './totp.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -41,12 +47,18 @@ export function createApp(db, dataDir = DATA_DIR) {
   const locked = id => { const f = fails.get(id); return f && f.n >= 5 && Date.now() - f.at < 60_000; };
   const failed = id => { const f = fails.get(id); fails.set(id, { n: f && Date.now() - f.at < 60_000 ? f.n + 1 : 1, at: Date.now() }); };
 
+  const AUTH0 = { signins: false, tfaTotp: true, tfaRequire: 'off' };
+  const auth = () => ({ ...AUTH0, ...db.read('auth', {}) });
+  // TOTP secrets live under their own keys, never in the state sent to browsers.
+  const totpOf = id => db.read('totp:' + id, '');
   const state = () => {
     const g = Object.fromEntries(DATA_KEYS.map(k => [k, db.read(k, null)]));
-    g.users = db.read('users', []).map(u => ({ ...u, hasPin: db.hasPin(u.id) }));
-    g.auth = db.read('auth', { signins: false });
+    g.users = db.read('users', []).map(u => ({ ...u, hasPin: db.hasPin(u.id), hasTotp: !!totpOf(u.id) }));
+    g.auth = auth();
     return g;
   };
+  const tickets = new Map(), pending = new Map(); // second-step tickets and TOTP setups, both short-lived
+  const log = (by, text) => db.write({ log: [{ id: randomBytes(5).toString('hex'), at: new Date().toISOString(), by, vid: null, text }, ...db.read('log', []) || []].slice(0, 500), version: version() + 1 });
   const version = () => db.read('version', 0);
 
   const send = (res, code, body, headers = {}) => { res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', ...headers }); res.end(JSON.stringify(body)); };
@@ -91,23 +103,117 @@ export function createApp(db, dataDir = DATA_DIR) {
     }
 
     if (path === '/api/login' && req.method === 'POST') {
-      const b = await body(req), users = db.read('users', []), auth = db.read('auth', { signins: false });
+      const b = await body(req), users = db.read('users', []), a = auth();
       const u = users.find(x => x.id === b.userId && !x.removed);
       if (!u) return send(res, 404, { error: 'No such person.' });
       if (locked(u.id)) return send(res, 429, { error: 'Too many tries. Wait a minute.' });
-      const stored = db.pinHash(u.id);
+      const stored = db.pinHash(u.id), secret = auth().tfaTotp ? totpOf(u.id) : '';
+      // An authenticator code can stand in for the PIN.
+      if (b.code != null && secret) {
+        if (!totpOk(secret, b.code)) { failed(u.id); return send(res, 401, { error: 'That code didn’t match. Try the newest one.' }); }
+        fails.delete(u.id);
+        return send(res, 200, { me: u.id }, startSession(res, u.id, req));
+      }
       if (stored) {
         if (!checkPin(b.pin || '', stored)) { failed(u.id); return send(res, 401, { error: 'Wrong PIN' }); }
-      } else if (u.role === 'admin' || auth.signins) {
+      } else if (u.role === 'admin' || a.signins) {
         // A profile that needs a PIN and has none sets it on first sign-in.
         if (!validPin(b.newPin)) return send(res, 400, { error: 'Use 4–8 digits' });
         db.setPin(u.id, hashPin(b.newPin));
       }
       fails.delete(u.id);
+      if (secret) { const t = randomBytes(24).toString('hex'); tickets.set(t, { id: u.id, at: Date.now() }); return send(res, 200, { tfa: true, ticket: t }); }
       return send(res, 200, { me: u.id }, startSession(res, u.id, req));
     }
 
+    if (path === '/api/login/totp' && req.method === 'POST') {
+      const b = await body(req), t = tickets.get(String(b.ticket || ''));
+      if (!t || Date.now() - t.at > 300_000) return send(res, 401, { error: 'That took too long. Sign in again.' });
+      if (locked(t.id)) return send(res, 429, { error: 'Too many tries. Wait a minute.' });
+      if (!totpOk(totpOf(t.id), b.code)) { failed(t.id); return send(res, 401, { error: 'That code didn’t match. Check your phone’s clock and try the newest code.' }); }
+      tickets.delete(String(b.ticket)); fails.delete(t.id);
+      return send(res, 200, { me: t.id }, startSession(res, t.id, req));
+    }
+
     if (path === '/api/logout' && req.method === 'POST') { const t = token(req); if (t) db.dropSession(t); return send(res, 200, {}, { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` }); }
+
+    // ---- your own account ----
+    if (['/api/me', '/api/pin', '/api/totp', '/api/totp/start', '/api/totp/verify'].includes(path)) {
+      const me = userOf(req);
+      if (!me) return send(res, 401, { error: 'Sign in first.' });
+      const b = req.method === 'DELETE' ? {} : await body(req), users = db.read('users', []), a = auth();
+      const setMe = patch => db.write({ users: users.map(x => (x.id === me.id ? { ...x, ...patch } : x)), version: version() + 1 });
+      const required = a.tfaRequire === 'all' || (a.tfaRequire === 'admins' && me.role === 'admin');
+      if (path === '/api/me' && req.method === 'POST') {
+        const patch = {};
+        if (b.name != null) { const n = String(b.name).trim().slice(0, 60); if (!n) return send(res, 400, { error: 'Enter a name.' }); patch.name = n; }
+        if (b.color != null && /^#[0-9a-f]{6}$/i.test(b.color)) patch.color = b.color;
+        setMe(patch); return send(res, 200, {});
+      }
+      if (path === '/api/pin' && req.method === 'POST') { if (!validPin(b.pin)) return send(res, 400, { error: 'Use 4–8 digits.' }); db.setPin(me.id, hashPin(b.pin)); log(me.id, 'changed their PIN'); return send(res, 200, {}); }
+      if (path === '/api/pin' && req.method === 'DELETE') {
+        if (me.role === 'admin' || a.signins) return send(res, 400, { error: me.role === 'admin' ? 'Admins always need a PIN.' : 'Everyone needs a PIN while sign-ins are on.' });
+        db.clearPin(me.id); return send(res, 200, {});
+      }
+      if (path === '/api/totp/start' && req.method === 'POST') {
+        if (!a.tfaTotp) return send(res, 400, { error: 'Authenticator apps are off. Ask an admin.' });
+        const secret = newSecret(); pending.set(me.id, secret);
+        return send(res, 200, { secret, uri: `otpauth://totp/Garage:${encodeURIComponent(me.name)}?secret=${secret}&issuer=Garage` });
+      }
+      if (path === '/api/totp/verify' && req.method === 'POST') {
+        const secret = pending.get(me.id);
+        if (!secret) return send(res, 400, { error: 'Start the setup again.' });
+        if (!totpOk(secret, b.code)) return send(res, 400, { error: 'That code didn’t match. Try the newest one.' });
+        pending.delete(me.id); db.write({ ['totp:' + me.id]: secret }); log(me.id, 'turned on an authenticator app');
+        return send(res, 200, {});
+      }
+      if (path === '/api/totp' && req.method === 'DELETE') {
+        if (required) return send(res, 400, { error: 'Two-factor is required for you, so the authenticator app has to stay on.' });
+        db.write({ ['totp:' + me.id]: '' }); log(me.id, 'turned off their authenticator app');
+        return send(res, 200, {});
+      }
+    }
+
+    // ---- admin ----
+    if (path.startsWith('/api/admin/')) {
+      const me = userOf(req);
+      if (!me || me.role !== 'admin') return send(res, 403, { error: 'Admins only.' });
+      const b = await body(req), users = db.read('users', []), a = auth();
+      if (path === '/api/admin/auth' && req.method === 'PUT') {
+        const nx = { ...a };
+        if (typeof b.signins === 'boolean') { if (b.signins && !db.hasPin(me.id)) return send(res, 400, { error: 'Set your own PIN first (Settings → Profile), or you’ll be locked out.' }); nx.signins = b.signins; }
+        if (typeof b.tfaTotp === 'boolean') { nx.tfaTotp = b.tfaTotp; if (!b.tfaTotp) nx.tfaRequire = 'off'; }
+        if (['off', 'admins', 'all'].includes(b.tfaRequire)) { if (b.tfaRequire !== 'off' && !nx.tfaTotp) return send(res, 400, { error: 'Turn on authenticator apps first.' }); nx.tfaRequire = b.tfaRequire; }
+        db.write({ auth: nx });
+        const what = Object.keys(b).map(k => k === 'signins' ? `turned ${nx.signins ? 'on' : 'off'} sign-ins` : k === 'tfaTotp' ? `turned ${nx.tfaTotp ? 'on' : 'off'} authenticator apps` : `set two-factor to ${({ off: 'optional', admins: 'admins', all: 'everyone' })[nx.tfaRequire]}`).join(', ');
+        if (what) log(me.id, what);
+        return send(res, 200, { auth: nx });
+      }
+      if (path === '/api/admin/users' && req.method === 'POST') {
+        const name = String(b.name || '').trim().slice(0, 60);
+        if (!name) return send(res, 400, { error: 'Enter a name.' });
+        const u = { id: 'u' + randomBytes(5).toString('hex'), name, color: ['#5b84ff', '#3fcf8e', '#e8b04b', '#f2685f', '#b48cff', '#4fc3d9'][users.length % 6], role: b.role === 'admin' ? 'admin' : 'member' };
+        db.write({ users: [...users, u], version: version() + 1 }); log(me.id, `added ${name} as ${u.role === 'admin' ? 'an admin' : 'a member'}`);
+        return send(res, 200, { id: u.id });
+      }
+      const um = path.match(/^\/api\/admin\/users\/([\w-]+)$/);
+      if (um && req.method === 'PATCH') {
+        const u = users.find(x => x.id === um[1] && !x.removed);
+        if (!u) return send(res, 404, { error: 'No such person.' });
+        const admins = users.filter(x => x.role === 'admin' && !x.removed);
+        const losesAdmin = u.role === 'admin' && (b.removed || (b.role && b.role !== 'admin'));
+        if (losesAdmin && admins.length <= 1) return send(res, 400, { error: 'Garage needs at least one admin.' });
+        if (b.removed && u.id === me.id) return send(res, 400, { error: 'You can’t remove yourself.' });
+        const patch = {};
+        if (b.role === 'admin' || b.role === 'member') patch.role = b.role;
+        if (b.removed) patch.removed = true;
+        if (b.resetPin) { db.clearPin(u.id); db.write({ ['totp:' + u.id]: '' }); }
+        if (Object.keys(patch).length) db.write({ users: users.map(x => (x.id === u.id ? { ...x, ...patch } : x)), version: version() + 1 });
+        log(me.id, b.removed ? `removed ${u.name}` : b.resetPin ? `reset ${u.name}’s PIN and two-factor` : `made ${u.name} ${patch.role === 'admin' ? 'an admin' : 'a member'}`);
+        return send(res, 200, {});
+      }
+      return send(res, 404, { error: 'Not found' });
+    }
 
     if (path === '/api/files' && req.method === 'POST') {
       const me = userOf(req);
@@ -137,8 +243,8 @@ export function createApp(db, dataDir = DATA_DIR) {
     }
 
     if (path === '/api/users' && req.method === 'POST') {
-      const b = await body(req), users = db.read('users', []), auth = db.read('auth', { signins: false });
-      if (auth.signins) return send(res, 403, { error: 'Ask an admin to add you.' });
+      const b = await body(req), users = db.read('users', []);
+      if (auth().signins) return send(res, 403, { error: 'Ask an admin to add you.' });
       const name = String(b.name || '').trim().slice(0, 60);
       if (!name) return send(res, 400, { error: 'Enter a name.' });
       if (b.pin && !validPin(b.pin)) return send(res, 400, { error: 'PINs need at least 4 digits' });

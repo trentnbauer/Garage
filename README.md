@@ -2,7 +2,7 @@
 
 A self-hosted logbook for project and daily cars: service history, fill-ups, reminders, a build board, parts and paperwork, shared with whoever works on the cars with you.
 
-**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home, every car tab except Photos and Manual, the dialogs, the Shelf and Shopping list, and file uploads (car photos and documents). Settings, Admin settings, AI help, two-factor sign-in, OAuth2 and the LubeLogger import are still to come. Their buttons are already in place and say so when clicked.
+**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home, every car tab except Photos and Manual, the dialogs, the Shelf and Shopping list, file uploads (car photos and documents), Settings, and Admin settings for sign-in, people and the activity log. Two-factor sign-in works with authenticator apps. AI help, email, the Cloudflare tunnel, passkeys, OAuth2 and the LubeLogger import are still to come. Their buttons are already in place and say so when clicked.
 
 ## Run it
 
