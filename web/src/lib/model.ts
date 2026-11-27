@@ -66,7 +66,11 @@ export interface Garage {
   notes: Record<string, string>; shelf: ShelfItem[]; users: User[]; settings: Settings;
   auth: { signins: boolean; tfaTotp?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
+  /** Admin-set integrations, sent by the server. Their secrets stay there: only whether one is saved. */
+  ai?: AiCfg; smtp?: SmtpCfg;
 }
+export type AiCfg = { enabled: boolean; provider: 'anthropic' | 'openai' | 'ollama'; model: string; baseUrl: string; shareSpecs: boolean; shareHistory: boolean; shareNotes: boolean; shareManual: boolean; hasKey: boolean };
+export type SmtpCfg = { enabled: boolean; host: string; port: number; security: 'starttls' | 'ssl' | 'none'; user: string; fromName: string; fromAddr: string; replyTo: string; to: string; digest: 'off' | 'daily' | 'weekly'; overdue: boolean; blockers: boolean; summary: boolean; signin: boolean; hasPass: boolean };
 
 export const SETTINGS0: Settings = { units: 'km', currency: '$', soonDays: 14, soonDist: 500, accent: '', fullWidth: false, showTotals: true, defaultSec: 'overview', showDoneCol: true, hideDoneDays: 7 };
 

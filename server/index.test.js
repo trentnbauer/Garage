@@ -106,4 +106,16 @@ test('sign-in, saving and PIN rules', async t => {
   // Sign-ins on needs the admin's own PIN, which Alex has.
   assert.equal((await call('PUT', '/api/admin/auth', { signins: true }, alexAdmin.cookie)).status, 200);
   assert.equal((await call('POST', '/api/users', { name: 'Late', color: '#3fcf8e' })).status, 403);
+
+  // AI and SMTP: admins only, secrets never sent back, AI off by default.
+  assert.equal((await call('PUT', '/api/admin/ai', { enabled: true }, sam.cookie)).status, 403);
+  assert.equal((await call('POST', '/api/ai', { prompt: 'hi' }, sam.cookie)).status, 400);
+  assert.equal((await call('PUT', '/api/admin/ai', { enabled: true, provider: 'anthropic', apiKey: 'sk-secret-123' }, alexAdmin.cookie)).status, 200);
+  assert.equal((await call('PUT', '/api/admin/smtp', { host: 'smtp.x.com', pass: 'smtp-secret-456', port: 'not a number' }, alexAdmin.cookie)).status, 200);
+  const st3 = (await call('GET', '/api/state', null, sam.cookie)).json;
+  assert.equal(st3.garage.ai.hasKey, true);
+  assert.equal(st3.garage.smtp.hasPass, true);
+  assert.equal(st3.garage.smtp.port, 587); // wrong type ignored
+  assert.equal(JSON.stringify(st3).includes('sk-secret-123') || JSON.stringify(st3).includes('smtp-secret-456'), false);
+  assert.equal((await call('POST', '/api/ai', { prompt: 'x'.repeat(40001) }, sam.cookie)).status, 400);
 });

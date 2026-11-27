@@ -11,6 +11,9 @@
 //   POST /api/totp/start → { secret, uri }; POST /api/totp/verify { code }; DELETE /api/totp
 //   PUT  /api/admin/auth { signins?, tfaTotp?, tfaRequire? }; POST /api/admin/users { name, role };
 //   PATCH /api/admin/users/:id { role?, removed?, resetPin? }   (admins only)
+//   PUT  /api/admin/ai {…, apiKey?: string|null}; POST /api/admin/ai/test
+//   PUT  /api/admin/smtp {…, pass?: string|null}; POST /api/admin/smtp/test { to }
+//   POST /api/ai { prompt } → { text }   (anyone signed in, while AI help is on)
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -18,6 +21,8 @@ import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db.js';
 import { newSecret, verify as totpOk } from './totp.js';
+import { askAI } from './ai.js';
+import { sendMail } from './smtp.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -48,6 +53,11 @@ export function createApp(db, dataDir = DATA_DIR) {
   const failed = id => { const f = fails.get(id); fails.set(id, { n: f && Date.now() - f.at < 60_000 ? f.n + 1 : 1, at: Date.now() }); };
 
   const AUTH0 = { signins: false, tfaTotp: true, tfaRequire: 'off' };
+  // Admin-set integrations. Their secrets (API key, SMTP password) live under their own keys and are never sent out.
+  const AI0 = { enabled: false, provider: 'anthropic', model: '', baseUrl: '', shareSpecs: true, shareHistory: true, shareNotes: false, shareManual: true };
+  const SMTP0 = { enabled: false, host: '', port: 587, security: 'starttls', user: '', fromName: 'Garage', fromAddr: '', replyTo: '', to: '', digest: 'weekly', overdue: true, blockers: true, summary: false, signin: true };
+  const aiCfg = () => ({ ...AI0, ...db.read('ai', {}) }), smtpCfg = () => ({ ...SMTP0, ...db.read('smtp', {}) });
+  const pick = (b, base) => Object.fromEntries(Object.keys(base).filter(k => k in b && typeof b[k] === typeof base[k]).map(k => [k, typeof b[k] === 'string' ? b[k].slice(0, 500) : b[k]]));
   const auth = () => ({ ...AUTH0, ...db.read('auth', {}) });
   // TOTP secrets live under their own keys, never in the state sent to browsers.
   const totpOf = id => db.read('totp:' + id, '');
@@ -55,6 +65,8 @@ export function createApp(db, dataDir = DATA_DIR) {
     const g = Object.fromEntries(DATA_KEYS.map(k => [k, db.read(k, null)]));
     g.users = db.read('users', []).map(u => ({ ...u, hasPin: db.hasPin(u.id), hasTotp: !!totpOf(u.id) }));
     g.auth = auth();
+    g.ai = { ...aiCfg(), hasKey: !!db.read('secret:aiKey', '') };
+    g.smtp = { ...smtpCfg(), hasPass: !!db.read('secret:smtpPass', '') };
     return g;
   };
   const tickets = new Map(), pending = new Map(); // second-step tickets and TOTP setups, both short-lived
@@ -212,7 +224,44 @@ export function createApp(db, dataDir = DATA_DIR) {
         log(me.id, b.removed ? `removed ${u.name}` : b.resetPin ? `reset ${u.name}’s PIN and two-factor` : `made ${u.name} ${patch.role === 'admin' ? 'an admin' : 'a member'}`);
         return send(res, 200, {});
       }
+      if (path === '/api/admin/ai' && req.method === 'PUT') {
+        const nx = { ...aiCfg(), ...pick(b, AI0) };
+        if (!['anthropic', 'openai', 'ollama'].includes(nx.provider)) return send(res, 400, { error: 'Unknown provider.' });
+        db.write({ ai: nx, ...(typeof b.apiKey === 'string' ? { 'secret:aiKey': b.apiKey.trim() } : b.apiKey === null ? { 'secret:aiKey': '' } : {}) });
+        if ('enabled' in b) log(me.id, `turned ${nx.enabled ? 'on' : 'off'} AI help`);
+        if ('apiKey' in b) log(me.id, b.apiKey ? 'saved the AI API key' : 'removed the AI API key');
+        return send(res, 200, {});
+      }
+      if (path === '/api/admin/ai/test' && req.method === 'POST') {
+        try { const text = await askAI(aiCfg(), db.read('secret:aiKey', ''), 'Reply with the single word: ready'); return send(res, 200, { text }); }
+        catch (e) { return send(res, 400, { error: e.message }); }
+      }
+      if (path === '/api/admin/smtp' && req.method === 'PUT') {
+        const nx = { ...smtpCfg(), ...pick(b, SMTP0) };
+        if (!['starttls', 'ssl', 'none'].includes(nx.security)) return send(res, 400, { error: 'Unknown security setting.' });
+        db.write({ smtp: nx, ...(typeof b.pass === 'string' ? { 'secret:smtpPass': b.pass } : b.pass === null ? { 'secret:smtpPass': '' } : {}) });
+        if ('enabled' in b) log(me.id, `turned ${nx.enabled ? 'on' : 'off'} email`);
+        if ('pass' in b) log(me.id, b.pass ? 'saved the SMTP password' : 'removed the SMTP password');
+        return send(res, 200, {});
+      }
+      if (path === '/api/admin/smtp/test' && req.method === 'POST') {
+        const c = smtpCfg();
+        try {
+          await sendMail({ ...c, pass: db.read('secret:smtpPass', '') }, { fromName: c.fromName, from: c.fromAddr, replyTo: c.replyTo, to: [String(b.to || '')], subject: 'Garage test email', text: `This is a test from Garage, sent by ${me.name}.\n\nIf you can read this, email is set up.` });
+          log(me.id, 'sent a test email'); return send(res, 200, {});
+        } catch (e) { return send(res, 400, { error: e.message }); }
+      }
       return send(res, 404, { error: 'Not found' });
+    }
+
+    if (path === '/api/ai' && req.method === 'POST') {
+      const me = userOf(req);
+      if (!me) return send(res, 401, { error: 'Sign in first.' });
+      const c = aiCfg(), b = await body(req), prompt = String(b.prompt || '');
+      if (!c.enabled) return send(res, 400, { error: 'AI help is off. An admin can turn it on in Admin settings → AI help.' });
+      if (!prompt.trim() || prompt.length > 40000) return send(res, 400, { error: 'Ask something a bit shorter.' });
+      try { return send(res, 200, { text: await askAI(c, db.read('secret:aiKey', ''), prompt) }); }
+      catch (e) { return send(res, 502, { error: e.message }); }
     }
 
     if (path === '/api/files' && req.method === 'POST') {

@@ -5,6 +5,7 @@ import {
 } from '../lib/actions.ts';
 import { addMonths, type Calc, type Col, COLNAME, DRIVE, type Drive, fdate, FUELS, lastGrade, nextDue, type Part, PCOL, PSTAT, syncRego, TCOL, tint, today, uid, type User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
+import { AskAI } from './AskAI.tsx';
 import { Icon } from './icons.tsx';
 
 export type OdoForm = { cur: number; add: string; reading: string; fix: boolean };
@@ -309,6 +310,7 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
   const g = calc.g, f = d.form, vid = d.vid, cid = f.id || f.pid!;
   const [pm, setPm] = useState<PM | null>(null);
   const [newNote, setNewNote] = useState('');
+  const [askAI, setAskAI] = useState(false);
   const up = (p: Partial<CardForm>) => set({ ...d, form: { ...f, ...p } });
   const ps = g.parts.filter(p => p.cardId === cid), ptot = partsTotal(g, cid), lb = +f.labour || 0;
   const users = g.users.filter(x => !x.removed);
@@ -347,7 +349,7 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
 
   return <>
     <Shell title={f.id ? 'Edit task' : 'New task'} byLine={f.createdBy ? `Added by ${f.createdBy === me.id ? 'You' : who(f.createdBy).name}` : undefined} width={940} narrow={narrow} onClose={close} onSave={save} dirty={dirty} valid={!!f.title.trim()} cta={f.id ? 'Save task' : 'Add task'}
-      footer={<><Cancel onClick={close} />{f.id && <DelLink onClick={() => nav.ask({ title: 'Delete this task?', body: `“${f.title || 'Untitled'}” and its photos and notes will be removed from the board. Service history is not affected.`, label: 'Delete task', fn: () => { store.update(g2 => deleteCard(g2, vid, f.id!)); close(); } })}>Delete card</DelLink>}</>}>
+      footer={<><Cancel onClick={close} />{g.ai?.enabled && f.title.trim() && <button type="button" className="plain" onClick={() => setAskAI(true)} title="Ask AI about this task" style={{ height: 40, padding: '0 16px', borderRadius: 999, background: 'var(--accs)', color: 'var(--acc)', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}><Icon n="sparkle" />Ask AI</button>}{f.id && <DelLink onClick={() => nav.ask({ title: 'Delete this task?', body: `“${f.title || 'Untitled'}” and its photos and notes will be removed from the board. Service history is not affected.`, label: 'Delete task', fn: () => { store.update(g2 => deleteCard(g2, vid, f.id!)); close(); } })}>Delete card</DelLink>}</>}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,380px),1fr))', gap: '16px 22px', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
           <L label="Task"><input className="field" required placeholder="Install coilovers" value={f.title} onChange={e => up({ title: e.target.value })} style={{ height: 42, fontSize: 16, fontWeight: 600 }} /></L>
@@ -440,6 +442,7 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
         </form>
       </div>
     )}
+    {askAI && <AskAI calc={calc} store={store} vid={vid} form={f} onClose={() => setAskAI(false)} onSave={text => patchActivity([...f.activity, ev(text, me.id, 'note')])} />}
   </>;
 }
 

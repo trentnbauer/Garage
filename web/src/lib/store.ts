@@ -15,6 +15,8 @@ export type Store = {
   /** Account and admin calls; reloads the garage after a change. */
   api: (method: string, path: string, body?: unknown) => Promise<{ ok: boolean; json: Record<string, unknown> & { error?: string } }>;
   addUser: (name: string, color: string, pin: string) => Promise<string>;
+  /** Ask the admin-configured AI. Nothing in the garage changes, so nothing reloads. */
+  ai: (prompt: string) => Promise<{ text?: string; error?: string }>;
   logout: () => void;
 };
 
@@ -104,12 +106,18 @@ export function useStore(): Store {
     return '';
   }, [load]);
 
+  const ai = useCallback(async (prompt: string) => {
+    if (DEMO) return { error: 'The demo can’t reach an AI provider. On your own server an admin sets one up in Admin settings → AI help.' };
+    const r = await call('POST', '/api/ai', { prompt }).catch(() => ({ ok: false, status: 0, json: { error: 'Can’t reach the Garage server.' } }));
+    return r.ok ? { text: String(r.json.text || '') } : { error: r.json.error || 'The AI request failed.' };
+  }, []);
+
   const logout = useCallback(() => {
     setS(cur => cur && { ...cur, me: null });
     if (!DEMO) call('POST', '/api/logout').catch(() => {});
   }, []);
 
-  return { g: s?.garage || null, me: s?.me || null, error, update, login, loginTotp, api, addUser, logout };
+  return { g: s?.garage || null, me: s?.me || null, error, update, login, loginTotp, api, addUser, ai, logout };
 }
 
 /** Per-device UI state (which screen is open). Optional: a blocked or empty storage just starts at home. */
