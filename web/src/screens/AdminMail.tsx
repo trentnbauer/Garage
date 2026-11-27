@@ -21,19 +21,19 @@ const SMTP_PRE: [string, string, number, SmtpCfg['security'], string][] = [
 export const aiStatus = (g: Garage): [string, string] => { const a = { ...AI0, ...g.ai }; return !a.enabled ? ['Off', '#8d9099'] : AI_PROV[a.provider]?.key && !a.hasKey ? ['Needs API key', '#e8b04b'] : ['Ready', '#3fcf8e']; };
 export const smtpStatus = (g: Garage): [string, string] => { const s = { ...SMTP0, ...g.smtp }; return !s.enabled ? ['Off', '#8d9099'] : s.host && s.port && s.fromAddr && (!s.user || s.hasPass) ? ['Ready', '#3fcf8e'] : ['Needs setup', '#e8b04b']; };
 
-const card: CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 20, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 };
-const lab: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 };
-const mono: CSSProperties = { fontFamily: 'var(--mono)', fontSize: 13 };
+export const card: CSSProperties = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 20, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 };
+export const lab: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 6 };
+export const mono: CSSProperties = { fontFamily: 'var(--mono)', fontSize: 13 };
 const pill = (on: boolean): CSSProperties => ({ boxSizing: 'content-box', border: `1px solid ${on ? 'var(--acc)' : 'var(--line2)'}`, background: on ? 'var(--accs)' : 'transparent', color: on ? 'var(--fg)' : 'var(--mut)' });
 const solid = (on: boolean): CSSProperties => ({ height: 40, padding: '0 16px', flex: 'none', borderRadius: 999, fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', background: on ? 'var(--acc)' : 'var(--card2)', color: on ? 'var(--accfg)' : 'var(--mut)' });
 const outline: CSSProperties = { boxSizing: 'content-box', height: 40, padding: '0 16px', borderRadius: 999, border: '1px solid var(--line2)', fontSize: 13, display: 'flex', alignItems: 'center' };
-const Head = ({ title, hint, st }: { title: string; hint: string; st: [string, string] }) => (
+export const Head = ({ title, hint, st, max }: { title: string; hint: string; st: [string, string]; max?: number }) => (
   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-    <div><div className="card-t">{title}</div><div style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.45 }}>{hint}</div></div>
+    <div><div className="card-t">{title}</div><div style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.45, maxWidth: max }}>{hint}</div></div>
     <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap', background: st[1] + '22', color: st[1] }}>{st[0]}</span>
   </div>
 );
-const Line = ({ label, hint, on, flip }: { label: string; hint: string; on: boolean; flip: () => void }) => (
+export const Line = ({ label, hint, on, flip }: { label: string; hint: string; on: boolean; flip: () => void }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
     <div style={{ minWidth: 0 }}><div style={{ fontSize: 14 }}>{label}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{hint}</div></div><Toggle on={on} label={label} onClick={flip} />
   </div>
