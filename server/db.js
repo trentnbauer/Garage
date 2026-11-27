@@ -12,6 +12,7 @@ export function openDb(dataDir) {
     CREATE TABLE IF NOT EXISTS doc (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS pins (user_id TEXT PRIMARY KEY, hash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id TEXT NOT NULL, created TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, size INTEGER NOT NULL, at TEXT NOT NULL, by TEXT);
   `);
   const get = db.prepare('SELECT value FROM doc WHERE key = ?');
   const put = db.prepare('INSERT INTO doc (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
@@ -26,6 +27,8 @@ export function openDb(dataDir) {
     session: token => db.prepare('SELECT user_id FROM sessions WHERE token = ?').get(token)?.user_id || null,
     addSession: (token, id) => db.prepare('INSERT INTO sessions (token, user_id, created) VALUES (?, ?, ?)').run(token, id, new Date().toISOString()),
     dropSession: token => db.prepare('DELETE FROM sessions WHERE token = ?').run(token),
+    addFile: f => db.prepare('INSERT INTO files (id, name, type, size, at, by) VALUES (?, ?, ?, ?, ?, ?)').run(f.id, f.name, f.type, f.size, f.at, f.by),
+    file: id => db.prepare('SELECT * FROM files WHERE id = ?').get(id) || null,
     close: () => db.close(),
   };
 }

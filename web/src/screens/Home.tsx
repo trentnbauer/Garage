@@ -49,8 +49,8 @@ export function Home({ store, me, calc, nav, narrow }: { store: Store; me: User;
             <span title="Tasks not in Done, across every car's board. The Due list only shows the ones that block driving or have a target date." className="mono" style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'rgba(63,207,142,.12)', color: 'var(--up)', cursor: 'help' }}>{tasks} task{tasks === 1 ? '' : 's'} on boards</span>
             {over > 0 && <span className="mono" style={{ fontSize: 12, padding: '4px 10px', borderRadius: 999, background: 'rgba(242,104,95,.12)', color: 'var(--down)' }}>{over} overdue</span>}
           </div>
-          <button className="btn" onClick={nav.soon} style={{ marginLeft: 'auto', marginBottom: 6, padding: '0 16px', fontWeight: 600, gap: 8 }}><Icon n="shelf" />Shelf<span className="mono" style={{ fontSize: 11, color: 'var(--mut)' }}>{shelf}</span></button>
-          <button className="btn" onClick={nav.soon} style={{ marginBottom: 6, padding: '0 16px', fontWeight: 600, gap: 8 }}><Icon n="cart" />Shopping list<span className="mono" style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: 'var(--acc)', color: 'var(--accfg)' }}>{needed}</span></button>
+          <button className="btn" onClick={() => nav.open({ kind: 'shelf' })} style={{ marginLeft: 'auto', marginBottom: 6, padding: '0 16px', fontWeight: 600, gap: 8 }}><Icon n="shelf" />Shelf<span className="mono" style={{ fontSize: 11, color: 'var(--mut)' }}>{shelf}</span></button>
+          <button className="btn" onClick={() => nav.open({ kind: 'shop' })} style={{ marginBottom: 6, padding: '0 16px', fontWeight: 600, gap: 8 }}><Icon n="cart" />Shopping list<span className="mono" style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: 'var(--acc)', color: 'var(--accfg)' }}>{needed}</span></button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(100%,320px),1fr))', gap: 16 }}>

@@ -3,7 +3,7 @@ import type { Nav } from '../App.tsx';
 import {
   addVehicle, type CardForm, deleteCard, ev, logCost, newVehForm, partsTotal, type RecForm, remForm, type RemForm, saveCard, saveRecord, saveReminder, setOdometer, setPartStatus, TPL0, track, type VehForm,
 } from '../lib/actions.ts';
-import { addMonths, type Calc, COLNAME, DRIVE, type Drive, fdate, FUELS, lastGrade, nextDue, PCOL, PSTAT, TCOL, tint, today, uid, type User } from '../lib/model.ts';
+import { addMonths, type Calc, type Col, COLNAME, DRIVE, type Drive, fdate, FUELS, lastGrade, nextDue, type Part, PCOL, PSTAT, syncRego, TCOL, tint, today, uid, type User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
 import { Icon } from './icons.tsx';
 
@@ -14,7 +14,12 @@ export type Dlg =
   | { kind: 'reminder'; vid: string; form: RemForm }
   | { kind: 'odo'; vid: string; form: OdoForm }
   | { kind: 'vehicle'; form: VehForm }
-  | { kind: 'entry'; vid: string; id: string };
+  | { kind: 'entry'; vid: string; id: string }
+  | { kind: 'part'; vid: string; form: PartForm }
+  | { kind: 'sell'; vid: string; form: { date: string; price: string; to: string } }
+  | { kind: 'shelf' }
+  | { kind: 'shop'; cardId?: string };
+export type PartForm = { id?: string; name: string; partNo: string; vendor: string; qty: string; cost: string; status: (typeof PSTAT)[number]; cardId: string; url: string };
 
 export const blankRecord = (calc: Calc, vid: string, pre: Partial<RecForm> = {}): RecForm => {
   const v = calc.g.vehicles.find(x => x.id === vid)!;
@@ -373,7 +378,7 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><span className="label">Parts for this task</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{needN > 0 && <button type="button" className="btn-p" onClick={nav.soon} style={{ height: 28, padding: '0 12px', fontSize: 12 }}>Order {needN} needed</button>}<span className="mono mut" style={{ fontSize: 11 }}>{ps.length ? `${ps.length} · ${calc.money(ptot, true)}` : ''}</span></span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{needN > 0 && <button type="button" className="btn-p" onClick={() => { if (!f.title.trim()) return; store.update(g2 => saveCard(g2, vid, f, me.id, calc.TODAY)); nav.open({ kind: 'shop', cardId: cid }); }} style={{ height: 28, padding: '0 12px', fontSize: 12 }}>Order {needN} needed</button>}<span className="mono mut" style={{ fontSize: 11 }}>{ps.length ? `${ps.length} · ${calc.money(ptot, true)}` : ''}</span></span>
             </div>
             {ps.map(p => { const url = p.url; return (
               <div key={p.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 12, background: 'var(--card2)' }}>
@@ -551,6 +556,156 @@ function VehicleDialog({ d, set, calc, store, me, nav, narrow, close, dirty }: P
   );
 }
 
+// ---------- Part ----------
+function PartDialog({ d, set, calc, store, me, narrow, close, done, dirty }: P<Extract<Dlg, { kind: 'part' }>>) {
+  const f = d.form, up = (p: Partial<PartForm>) => set({ ...d, form: { ...f, ...p } });
+  const board = calc.g.boards[d.vid] || { backlog: [], parts: [], progress: [], done: [] };
+  const save = () => {
+    if (!f.name.trim()) return;
+    const data = { name: f.name.trim(), partNo: f.partNo, vendor: f.vendor, qty: Math.max(1, +f.qty || 1), cost: +f.cost || 0, status: f.status, cardId: f.cardId || null, url: f.url.trim() };
+    store.update(g2 => track(f.id ? { ...g2, parts: g2.parts.map(p => (p.id === f.id ? { ...p, ...data } : p)) } : { ...g2, parts: [...g2.parts, { id: uid(), vid: d.vid, ...data, by: me.id, at: new Date().toISOString() }] }, me.id, d.vid, `${f.id ? 'edited' : 'added'} part "${data.name}"`));
+    done();
+  };
+  return (
+    <Shell title={f.id ? 'Edit part' : 'Add part'} narrow={narrow} onClose={close} onSave={save} dirty={dirty} valid={!!f.name.trim()} cta={f.id ? 'Save part' : 'Add part'} footer={<Cancel onClick={close} />}>
+      <Grid>
+        <L label="Part" full><input className="field" required value={f.name} onChange={e => up({ name: e.target.value })} /></L>
+        <L label="Part no."><input className="field" style={mono} value={f.partNo} onChange={e => up({ partNo: e.target.value })} /></L>
+        <L label="Vendor"><input className="field" value={f.vendor} onChange={e => up({ vendor: e.target.value })} /></L>
+        <L label="Qty"><input className="field" type="number" style={mono} value={f.qty} onChange={e => up({ qty: e.target.value })} /></L>
+        <L label="Cost (each)"><input className="field" type="number" step="0.01" style={mono} value={f.cost} onChange={e => up({ cost: e.target.value })} /></L>
+        <L label="Status"><select className="field" style={sel} value={f.status} onChange={e => up({ status: e.target.value as Part['status'] })}>{PSTAT.map(x => <option key={x}>{x}</option>)}</select></L>
+        <L label="Link"><input className="field" placeholder="https://…" value={f.url} onChange={e => up({ url: e.target.value })} /></L>
+        <L label="For task" full><select className="field" style={sel} value={f.cardId} onChange={e => up({ cardId: e.target.value })}><option value="">Not linked to a task</option>{(['backlog', 'parts', 'progress', 'done'] as Col[]).flatMap(k => board[k].map(c => <option key={c.id} value={c.id}>{c.title} · {COLNAME[k]}</option>))}</select></L>
+      </Grid>
+    </Shell>
+  );
+}
+
+// ---------- Panels: sell, shelf, shopping list ----------
+function Panel({ title, sub, onClose, children, foot }: { title: string; sub: string; onClose: () => void; children: ReactNode; foot?: ReactNode }) {
+  useEffect(() => { const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); }; window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 55, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div role="dialog" aria-modal="true" aria-label={title} onClick={e => e.stopPropagation()} style={{ width: 'min(720px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', background: 'var(--card)', border: '1px solid var(--line2)', borderRadius: 22, boxShadow: '0 24px 60px rgba(0,0,0,.5)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '20px 22px 14px', borderBottom: '1px solid var(--line)' }}>
+          <div><div style={{ fontFamily: 'var(--serif)', fontWeight: 600, fontSize: 24 }}>{title}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{sub}</div></div>
+          <button type="button" className="plain icon-btn" onClick={onClose} title="Close" aria-label="Close"><Icon n="x" /></button>
+        </div>
+        {children}
+        {foot}
+      </div>
+    </div>
+  );
+}
+
+function SellDialog({ d, set, calc, store, me, close, done }: P<Extract<Dlg, { kind: 'sell' }>>) {
+  const f = d.form, v = calc.g.vehicles.find(x => x.id === d.vid)!, up = (p: Partial<typeof f>) => set({ ...d, form: { ...f, ...p } });
+  const save = (e: FormEvent) => {
+    e.preventDefault();
+    store.update(g2 => { const vehicles = g2.vehicles.map(x => (x.id === d.vid ? { ...x, sold: { date: f.date || today(), price: f.price === '' ? null : +f.price, to: f.to.trim() } } : x)); return track({ ...g2, vehicles, reminders: syncRego(vehicles, g2.reminders) }, me.id, d.vid, 'marked the car as sold'); });
+    done();
+  };
+  const inp = { height: 40, minWidth: 0, borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--card2)', color: 'var(--fg)', padding: '0 12px', fontSize: 14 };
+  return (
+    <Panel title="Mark as sold" sub={v.nickname || ''} onClose={close}>
+      <form onSubmit={save} style={{ padding: '16px 22px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
+          <L label="Date sold"><input type="date" style={inp} value={f.date} onChange={e => up({ date: e.target.value })} /></L>
+          <L label="Sale price"><input type="number" min="0" placeholder="Optional" style={{ ...inp, ...mono }} value={f.price} onChange={e => up({ price: e.target.value })} /></L>
+          <L label="Sold to"><input placeholder="Optional" style={inp} value={f.to} onChange={e => up({ to: e.target.value })} /></L>
+        </div>
+        <span style={{ fontSize: 13, color: 'var(--mut)', lineHeight: 1.5 }}>The car moves to Sold &amp; archived on the garage screen. Its history, documents and photos stay, reminders stop, and you can undo this any time. Export the paperwork pack first if the buyer needs it.</span>
+        <div style={{ display: 'flex', gap: 8 }}><button type="submit" className="btn-p" style={{ padding: '0 18px' }}>Mark as sold</button><button type="button" className="btn" onClick={close}>Cancel</button></div>
+      </form>
+    </Panel>
+  );
+}
+
+function ShelfDialog({ calc, store, me, close }: P<Extract<Dlg, { kind: 'shelf' }>>) {
+  const g = calc.g, live = g.vehicles.filter(v => !v.sold);
+  const [f, setF] = useState({ name: '', partNo: '', qty: '1', fits: '' }), [msg, setMsg] = useState('');
+  const add = (e: FormEvent) => {
+    e.preventDefault(); const name = f.name.trim(); if (!name) return;
+    store.update(g2 => track({ ...g2, shelf: [...g2.shelf, { id: uid(), name, partNo: f.partNo.trim(), qty: Math.max(1, +f.qty || 1), fits: f.fits.trim(), at: new Date().toISOString() }] }, me.id, null, `put “${name}” on the shelf`));
+    setF({ name: '', partNo: '', qty: '1', fits: '' }); setMsg('');
+  };
+  const use = (id: string, vid: string) => {
+    const p = g.shelf.find(x => x.id === id), v = g.vehicles.find(x => x.id === vid); if (!p || !v) return;
+    store.update(g2 => track({ ...g2, shelf: g2.shelf.flatMap(x => (x.id !== id ? [x] : x.qty > 1 ? [{ ...x, qty: x.qty - 1 }] : [])),
+      parts: [...g2.parts, { id: uid(), vid, cardId: null, name: p.name, partNo: p.partNo || '', vendor: 'From the shelf', qty: 1, cost: '', status: 'In stock', url: '', at: new Date().toISOString() }] }, me.id, vid, `took “${p.name}” from the shelf`));
+    setMsg(`Moved one “${p.name}” to ${v.nickname || v.model}.`);
+  };
+  const inp = { height: 40, minWidth: 0, borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--card2)', color: 'var(--fg)', padding: '0 12px', fontSize: 14 };
+  return (
+    <Panel title="Spare-parts shelf" sub="Spares kept for any car. Use one and it moves to that car’s parts list as In stock." onClose={close}
+      foot={<form onSubmit={add} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '14px 22px', borderTop: '1px solid var(--line)' }}>
+        <input aria-label="Part" placeholder="Part, e.g. 5W-30 oil 5 L" style={{ ...inp, flex: '2 1 180px' }} value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
+        <input aria-label="Part no." placeholder="Part no." style={{ ...inp, flex: '1 1 110px', ...mono }} value={f.partNo} onChange={e => setF({ ...f, partNo: e.target.value })} />
+        <input aria-label="Qty" type="number" min="1" placeholder="Qty" style={{ ...inp, width: 70, flex: 'none' }} value={f.qty} onChange={e => setF({ ...f, qty: e.target.value })} />
+        <input aria-label="Fits" placeholder="Fits (optional)" style={{ ...inp, flex: '1 1 130px' }} value={f.fits} onChange={e => setF({ ...f, fits: e.target.value })} />
+        <button type="submit" className="btn-p">Add to shelf</button>
+      </form>}>
+      <div style={{ overflow: 'auto', padding: '6px 22px 18px', display: 'flex', flexDirection: 'column' }}>
+        {g.shelf.map(p => (
+          <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--line)', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontSize: 14 }}>{p.name} <span className="mono mut" style={{ fontSize: 12 }}>×{p.qty || 1}</span></div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{[p.partNo, p.fits ? 'Fits ' + p.fits : 'Any car'].filter(Boolean).join(' · ')}</div></div>
+            <select aria-label={`Use ${p.name} on a car`} value="" onChange={e => e.target.value && use(p.id, e.target.value)} title="Move one to a car's parts list" style={{ ...inp, height: 32, fontSize: 12, padding: '0 8px', flex: 'none' }}><option value="">Use on…</option>{live.map(v => <option key={v.id} value={v.id}>{v.nickname || v.model}</option>)}</select>
+            <button type="button" className="plain ghost-del" onClick={() => store.update(g2 => ({ ...g2, shelf: g2.shelf.filter(x => x.id !== p.id) }))} style={{ fontSize: 12, color: 'var(--mut)', flex: 'none' }}>Remove</button>
+          </div>
+        ))}
+        {!g.shelf.length && <div style={{ padding: '28px 0', textAlign: 'center', color: 'var(--mut)', fontSize: 14 }}>The shelf is empty. Add spares you keep for any car — oil, filters, bulbs, fuses.</div>}
+        {msg && <span role="status" style={{ fontSize: 12, color: 'var(--up)', paddingTop: 10 }}>{msg}</span>}
+      </div>
+    </Panel>
+  );
+}
+
+function ShopDialog({ d, set, calc, store, me, close }: P<Extract<Dlg, { kind: 'shop' }>>) {
+  const g = calc.g, live = g.vehicles.filter(v => !v.sold), sc = d.cardId;
+  const [copied, setCopied] = useState(false);
+  const cardT: Record<string, string> = {};
+  Object.values(g.boards).forEach(b => Object.values(b).forEach(l => l.forEach(c => { cardT[c.id] = c.title; })));
+  const need = g.parts.filter(p => p.status === 'Needed' && live.some(v => v.id === p.vid) && (!sc || p.cardId === sc));
+  const sum = (l: Part[]) => l.reduce((a, p) => a + +(p.cost || 0) * (p.qty || 1), 0);
+  const vName = (id: string) => { const v = live.find(x => x.id === id); return v ? v.nickname || v.model : ''; };
+  const NS = 'No supplier yet', by: Record<string, Part[]> = {};
+  need.forEach(p => { const k = (p.vendor || '').trim() || NS; (by[k] = by[k] || []).push(p); });
+  const keys = Object.keys(by).sort((x, y) => Number(x === NS) - Number(y === NS) || sum(by[y]) - sum(by[x]));
+  // Marking ordered goes through setPartStatus, so a Backlog task moves to Waiting on parts.
+  const mark = (ids: string[]) => store.update(g2 => track(ids.reduce((acc, id) => setPartStatus(acc, id, 'Ordered', me.id).g, g2), me.id, null, `marked ${ids.length} part${ids.length === 1 ? '' : 's'} as ordered`));
+  const txt = keys.map(k => [k, ...by[k].map(p => '- [ ] ' + p.name + (p.partNo ? ' · ' + p.partNo : '') + (p.qty > 1 ? ' ×' + p.qty : '') + ' · ' + vName(p.vid) + (+p.cost ? ' · ' + calc.money(+p.cost * (p.qty || 1), true) : '') + (p.url ? ' · ' + p.url : ''))].join('\n')).join('\n\n');
+  return (
+    <Panel title="Shopping list" sub={need.length ? `${need.length} part${need.length === 1 ? '' : 's'} to order from ${keys.length} supplier${keys.length === 1 ? '' : 's'} — one order per shop` : 'Parts marked Needed show up here'} onClose={close}
+      foot={<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 22px', borderTop: '1px solid var(--line)' }}>
+        <span style={{ fontSize: 13, color: 'var(--mut)' }}>Total <b className="mono" style={{ color: 'var(--fg)', fontWeight: 600 }}>{calc.money(sum(need), true)}</b></span>
+        <button className="btn-p" style={{ marginLeft: 'auto' }} onClick={() => navigator.clipboard?.writeText(txt).then(() => setCopied(true), () => {})}>{copied ? 'Copied' : 'Copy as checklist'}</button>
+      </div>}>
+      <div style={{ overflow: 'auto', padding: '6px 22px 18px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {sc && <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginTop: 10, borderRadius: 12, background: 'var(--card2)', fontSize: 13 }}><span style={{ flex: 1 }}>Parts for “{cardT[sc] || 'this task'}”</span><button type="button" className="link" onClick={() => set({ kind: 'shop' })}>Show everything to buy</button></div>}
+        {keys.map(k => (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 0 6px' }}>
+              <div style={{ minWidth: 0 }}><div className="card-t">{k}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{by[k].length} part{by[k].length === 1 ? '' : 's'} · {calc.money(sum(by[k]), true)}</div></div>
+              {k === NS && <span style={{ fontSize: 12, color: 'var(--mut)' }}>Set a supplier on each part to group it</span>}
+              <button type="button" className="btn-p" onClick={() => mark(by[k].map(p => p.id))} style={{ flex: 'none', height: 30, padding: '0 12px', fontSize: 12 }}>Mark all ordered</button>
+            </div>
+            {by[k].map(p => (
+              <div key={p.id} className="row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '9px 0' }}>
+                <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, overflowWrap: 'anywhere' }}>{p.name || 'Untitled part'}</div><div style={{ fontSize: 12, color: 'var(--mut)', overflowWrap: 'anywhere' }}>{[p.partNo, p.qty > 1 ? '×' + p.qty : '', vName(p.vid), p.cardId && cardT[p.cardId] ? 'for “' + cardT[p.cardId] + '”' : ''].filter(Boolean).join(' · ')}</div></div>
+                {/^https?:\/\//i.test(p.url) && <a href={p.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--acc)', textDecoration: 'none', flex: 'none' }}>Buy</a>}
+                <span className="mono" style={{ fontSize: 13, flex: 'none', minWidth: 70, textAlign: 'right' }}>{+p.cost ? calc.money(+p.cost * (p.qty || 1), true) : '—'}</span>
+                <button className="btn" onClick={() => mark([p.id])} title="Mark as ordered" style={{ flex: 'none', height: 30, padding: '0 12px', fontSize: 12 }}>Ordered</button>
+              </div>
+            ))}
+          </div>
+        ))}
+        {!need.length && <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--mut)', fontSize: 14 }}>Nothing to buy. Every part is ordered, in stock or fitted.</div>}
+      </div>
+    </Panel>
+  );
+}
+
 /** Renders whichever dialog is open. Parts added to a task that's then cancelled are taken back out. */
 export function Dialogs({ dlg, setDlg, calc, store, me, nav, narrow }: { dlg: Dlg; setDlg: (d: Dlg | null) => void; calc: Calc; store: Store; me: User; nav: Nav; narrow: boolean }) {
   const init = useRef(JSON.stringify(dlg));
@@ -569,5 +724,9 @@ export function Dialogs({ dlg, setDlg, calc, store, me, nav, narrow }: { dlg: Dl
     case 'reminder': return <ReminderDialog key={kindKey} d={dlg} set={setDlg} {...common} />;
     case 'odo': return <OdoDialog d={dlg} set={setDlg} {...common} />;
     case 'vehicle': return <VehicleDialog d={dlg} set={setDlg} {...common} />;
+    case 'part': return <PartDialog d={dlg} set={setDlg} {...common} />;
+    case 'sell': return <SellDialog d={dlg} set={setDlg} {...common} />;
+    case 'shelf': return <ShelfDialog d={dlg} set={setDlg} {...common} />;
+    case 'shop': return <ShopDialog d={dlg} set={setDlg} {...common} />;
   }
 }

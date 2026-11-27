@@ -2,7 +2,7 @@
 
 A self-hosted logbook for project and daily cars: service history, fill-ups, reminders, a build board, parts and paperwork, shared with whoever works on the cars with you.
 
-**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home and the car Overview, on a Node + SQLite server. The other car sections, dialogs, Settings and Admin settings are still to come. Their buttons are already in place and say so when clicked.
+**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home, every car tab except Photos and Manual, the dialogs, the Shelf and Shopping list, and file uploads (car photos and documents). Settings, Admin settings, AI help, two-factor sign-in, OAuth2 and the LubeLogger import are still to come. Their buttons are already in place and say so when clicked.
 
 ## Run it
 
@@ -12,7 +12,7 @@ docker run -d --name garage -p 3000:3000 -v garage-data:/data ghcr.io/trentnbaue
 
 Then open http://localhost:3000. On first run Garage starts with a sample garage, and the admin profile **You** asks you to create a PIN.
 
-Everything lives in `/data`: `garage.db` (SQLite). Back up that volume.
+Everything lives in `/data`: `garage.db` (SQLite) and `files/` (photos and documents). Back up that volume.
 
 | Variable | Default | |
 |---|---|---|

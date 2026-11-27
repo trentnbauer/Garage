@@ -7,7 +7,7 @@ import { openDb } from './db.js';
 import { createApp } from './index.js';
 
 test('sign-in, saving and PIN rules', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), app = createApp(db);
+  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), app = createApp(db, dir);
   await new Promise(r => app.listen(0, r));
   t.after(() => { app.close(); db.close(); rmSync(dir, { recursive: true, force: true }); });
   const base = `http://localhost:${app.address().port}`;
@@ -48,4 +48,20 @@ test('sign-in, saving and PIN rules', async t => {
   assert.equal((await call('GET', '/api/state')).json.garage.users.find(u => u.id === alexId).role, 'member');
   for (let i = 0; i < 5; i++) assert.equal((await call('POST', '/api/login', { userId: 'u1', pin: '0000' })).status, 401);
   assert.equal((await call('POST', '/api/login', { userId: 'u1', pin: '4321' })).status, 429);
+
+  // Files: need a session; HTML is never served as a page; images are.
+  const up = (body, type, name, cookie) => fetch(base + '/api/files', { method: 'POST', headers: { 'content-type': type, 'x-file-name': encodeURIComponent(name), ...(cookie ? { cookie } : {}) }, body });
+  assert.equal((await up('x', 'text/plain', 'a.txt')).status, 401);
+  const html = await (await up('<script>alert(1)</script>', 'text/html', 'evil.html', login.cookie)).json();
+  assert.equal(html.size, 25);
+  assert.equal((await fetch(base + html.src)).status, 401);
+  const got = await fetch(base + html.src, { headers: { cookie: login.cookie } });
+  assert.equal(got.headers.get('content-type'), 'application/octet-stream');
+  assert.match(got.headers.get('content-disposition'), /^attachment/);
+  assert.equal(await got.text(), '<script>alert(1)</script>');
+  const img = await (await up(new Uint8Array([0xff, 0xd8, 0xff]), 'image/jpeg', 'car photo.jpg', login.cookie)).json();
+  const gi = await fetch(base + img.src, { headers: { cookie: login.cookie } });
+  assert.equal(gi.headers.get('content-type'), 'image/jpeg');
+  assert.match(gi.headers.get('content-disposition'), /^inline; filename\*=UTF-8''car%20photo\.jpg/);
+  assert.equal((await up(new Uint8Array(26 * 1024 * 1024), 'image/jpeg', 'big.jpg', login.cookie).catch(() => ({ status: 413 }))).status, 413);
 });

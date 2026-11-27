@@ -4,8 +4,10 @@
 //   POST /api/login          { userId, pin?, newPin? } → session cookie
 //   POST /api/logout
 //   POST /api/users          { name, color, pin? } add a person (only while sign-ins are off)
+//   POST /api/files          raw body, X-File-Name header → { id, name, type, size, src, at }; needs a session
+//   GET  /api/files/:id      the file; needs a session
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +18,9 @@ const PORT = +(process.env.PORT || 3000);
 const DATA_DIR = resolve(process.env.DATA_DIR || join(here, '..', 'data'));
 const STATIC_DIR = resolve(process.env.STATIC_DIR || join(here, '..', 'web', 'dist'));
 const MAX_BODY = 5 * 1024 * 1024;
+const MAX_FILE = 25 * 1024 * 1024;
+// Served inline; anything else downloads, so an uploaded HTML or SVG file can never run as a page.
+const INLINE = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/;
 const COOKIE = 'garage_session';
 // Collections the browser may save. Users and auth change only through their own routes.
 const DATA_KEYS = ['vehicles', 'records', 'reminders', 'parts', 'boards', 'notes', 'shelf', 'settings', 'log'];
@@ -29,7 +34,8 @@ export function checkPin(pin, stored) {
 }
 const validPin = p => typeof p === 'string' && /^\d{4,8}$/.test(p);
 
-export function createApp(db) {
+export function createApp(db, dataDir = DATA_DIR) {
+  const filesDir = join(dataDir, 'files');
   // Lock a profile for a minute after 5 wrong PINs. In memory: a restart clears it.
   const fails = new Map();
   const locked = id => { const f = fails.get(id); return f && f.n >= 5 && Date.now() - f.at < 60_000; };
@@ -48,6 +54,12 @@ export function createApp(db) {
     let size = 0; const chunks = [];
     req.on('data', c => { size += c.length; if (size > MAX_BODY) { fail(Object.assign(new Error('Too large'), { code: 413 })); req.destroy(); } else chunks.push(c); });
     req.on('end', () => { try { ok(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { fail(Object.assign(new Error('Bad JSON'), { code: 400 })); } });
+    req.on('error', fail);
+  });
+  const raw = (req, limit) => new Promise((ok, fail) => {
+    let size = 0; const chunks = [];
+    req.on('data', c => { size += c.length; if (size > limit) { fail(Object.assign(new Error(`Files can be up to ${limit / 1048576} MB.`), { code: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => ok(Buffer.concat(chunks)));
     req.on('error', fail);
   });
   const token = req => (req.headers.cookie || '').split(/;\s*/).map(c => c.split('=')).find(([k]) => k === COOKIE)?.[1] || '';
@@ -96,6 +108,33 @@ export function createApp(db) {
     }
 
     if (path === '/api/logout' && req.method === 'POST') { const t = token(req); if (t) db.dropSession(t); return send(res, 200, {}, { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` }); }
+
+    if (path === '/api/files' && req.method === 'POST') {
+      const me = userOf(req);
+      if (!me) return send(res, 401, { error: 'Sign in first.' });
+      const data = await raw(req, MAX_FILE);
+      const name = decodeURIComponent(String(req.headers['x-file-name'] || 'file')).replace(/[\\/\0]/g, '_').slice(0, 200) || 'file';
+      const type = String(req.headers['content-type'] || 'application/octet-stream').split(';')[0].trim().slice(0, 100);
+      const f = { id: randomBytes(12).toString('hex'), name, type, size: data.length, at: new Date().toISOString(), by: me.id };
+      await mkdir(filesDir, { recursive: true });
+      await writeFile(join(filesDir, f.id), data);
+      db.addFile(f);
+      return send(res, 200, { id: f.id, name, type, size: f.size, at: f.at, src: '/api/files/' + f.id });
+    }
+
+    const fm = path.match(/^\/api\/files\/([0-9a-f]{24})$/);
+    if (fm && req.method === 'GET') {
+      if (!userOf(req)) return send(res, 401, { error: 'Sign in first.' });
+      const f = db.file(fm[1]), data = f && await readFile(join(filesDir, f.id)).catch(() => null);
+      if (!data) return send(res, 404, { error: 'Not found' });
+      const inline = INLINE.test(f.type);
+      res.writeHead(200, {
+        'content-type': inline ? f.type : 'application/octet-stream', 'content-length': data.length,
+        'content-disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(f.name)}`,
+        'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; sandbox", 'cache-control': 'private, max-age=31536000, immutable',
+      });
+      return res.end(data);
+    }
 
     if (path === '/api/users' && req.method === 'POST') {
       const b = await body(req), users = db.read('users', []), auth = db.read('auth', { signins: false });
