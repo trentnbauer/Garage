@@ -1,0 +1,16 @@
+services:
+  garage:
+    image: ghcr.io/trentnbauer/garage:${GARAGE_IMAGE_TAG:-0.0.1}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      DATA_DIR: /data
+    ports:
+      - "${GARAGE_BIND_ADDRESS:-127.0.0.1}:${GARAGE_HOST_PORT:-3000}:3000"
+    volumes:
+      - garage-data:/data
+
+volumes:
+  garage-data:
