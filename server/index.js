@@ -30,6 +30,7 @@ import { sendMail } from './smtp.js';
 import { applyTunnel, hostOf, runner } from './tunnel.js';
 import { fromEnv, lockedVars, lockOf, toEnv } from './env.js';
 import { fromApi, fromVolume } from './lube.js';
+import { createMailer } from './mailer.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -52,7 +53,7 @@ export function checkPin(pin, stored) {
 }
 const validPin = p => typeof p === 'string' && /^\d{4,8}$/.test(p);
 
-export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, env = process.env, lubeFetch } = {}) {
+export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, env = process.env, lubeFetch, mail = true, mailSend } = {}) {
   const filesDir = join(dataDir, 'files');
   // Lock a profile for a minute after 5 wrong PINs. In memory: a restart clears it.
   const fails = new Map();
@@ -117,6 +118,8 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
   const userOf = req => { const t = token(req), id = t && db.session(t), u = id && db.read('users', []).find(x => x.id === id && !x.removed); return u || null; };
   const startSession = (res, id, req) => {
     const t = randomBytes(32).toString('hex'); db.addSession(t, id);
+    const u = db.read('users', []).find(x => x.id === id);
+    if (u) mailer.signedIn(u, req.headers['user-agent']).catch(() => {}); // a new browser may get a sign-in alert
     const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
     return { 'set-cookie': `${COOKIE}=${t}; HttpOnly; SameSite=Lax; Path=/; Max-Age=31536000${secure}` };
   };
@@ -411,6 +414,12 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
     res.end(data);
   }
 
+  // Reminder digests and alerts: checked a minute after start, then every 15 minutes.
+  const mailer = createMailer({
+    read: db.read, write: db.write, garage: state, smtp: smtpCfg, users: () => db.read('users', []), log: m => console.warn('Garage email:', m),
+    send: mailSend || ((to, subject, text) => { const c = smtpCfg(); return sendMail({ ...c, pass: db.read('secret:smtpPass', '') }, { fromName: c.fromName, from: c.fromAddr, replyTo: c.replyTo, to, subject, text }); }),
+  });
+  if (mail) { setTimeout(() => mailer.tick().catch(e => console.error(e)), 60_000).unref(); setInterval(() => mailer.tick().catch(e => console.error(e)), 15 * 60_000).unref(); }
   // Docker: the CLOUDFLARE_* variables set up and run the tunnel on every start; TUNNEL_TOKEN runs a hand-made one.
   // On start the environment wins over what's saved.
   const prevUrl = tunCfg().appUrl;
