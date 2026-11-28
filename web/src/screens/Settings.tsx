@@ -4,6 +4,7 @@ import { buildIcs, type Calc, download, type Garage, type Settings as S, today, 
 import { seed } from '../lib/seed.ts';
 import type { Store } from '../lib/store.ts';
 import { Icon } from '../ui/icons.tsx';
+import { Migrate } from '../ui/Migrate.tsx';
 
 const ACC: [string, string][] = [['Graphite', ''], ['Blue', '#5b84ff'], ['Teal', '#4fc3d9'], ['Green', '#3fcf8e'], ['Amber', '#e8b04b'], ['Orange', '#e8935b'], ['Red', '#f2685f'], ['Violet', '#b48cff']];
 const card = { background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 20, padding: 20, display: 'flex', flexDirection: 'column' as const, gap: 16 };
@@ -22,7 +23,7 @@ export const Back = ({ nav }: { nav: Nav }) => <button className="btn" onClick={
 
 export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; me: User; calc: Calc; nav: Nav; narrow: boolean; nag: boolean }) {
   const g = calc.g, set = g.settings, a = g.auth;
-  const [name, setName] = useState(me.name);
+  const [name, setName] = useState(me.name), [mig, setMig] = useState(false);
   const [pin, setPin] = useState(''), [pinMsg, setPinMsg] = useState<{ t: string; ok: boolean } | null>(null);
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null), [code, setCode] = useState(''), [tfaMsg, setTfaMsg] = useState<{ t: string; ok: boolean } | null>(null), [copied, setCopied] = useState(false);
   const [dataMsg, setDataMsg] = useState(''), [resetTxt, setResetTxt] = useState('');
@@ -128,8 +129,8 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
             <span className="card-t">Units</span>
             {([['Distance', 'Odometer, intervals and economy', 'units', [['mi', 'mi'], ['km', 'km']]], ['Currency', 'Costs and totals', 'currency', [['$', '$'], ['€', '€'], ['£', '£']]]] as const).map(([label, hint, k, opts]) => (
               <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div><div style={{ fontSize: 14 }}>{label}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{hint}</div></div>
-                <Seg mono value={String(set[k])} opts={opts as unknown as [string, string][]} onPick={v => setS({ [k]: v } as Partial<S>)} />
+                <div><div style={{ fontSize: 14 }}>{label}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{g.envLocked?.includes(k === 'units' ? 'GARAGE_UNITS' : 'GARAGE_CURRENCY') ? `Set by ${k === 'units' ? 'GARAGE_UNITS' : 'GARAGE_CURRENCY'} in .env` : hint}</div></div>
+                <Seg mono value={String(set[k])} opts={opts as unknown as [string, string][]} onPick={v => { if (!g.envLocked?.includes(k === 'units' ? 'GARAGE_UNITS' : 'GARAGE_CURRENCY')) setS({ [k]: v } as Partial<S>); }} />
               </div>
             ))}
           </div>
@@ -167,7 +168,7 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn-p" onClick={backup}><Icon n="download" s={15} />Export backup</button>
               <label className="btn" style={{ cursor: 'pointer', padding: '0 16px' }}><Icon n="upload" s={15} />Import backup<input type="file" accept="application/json,.json" onChange={importBackup} style={{ display: 'none' }} /></label>
-              <button className="btn" style={{ padding: '0 16px' }} onClick={nav.soon}><Icon n="swap" s={15} />Migrate from another app</button>
+              <button className="btn" style={{ padding: '0 16px' }} onClick={() => setMig(true)}><Icon n="swap" s={15} />Migrate from another app</button>
             </div>
             {dataMsg && <span role="status" style={{ fontSize: 12, color: 'var(--up)' }}>{dataMsg}</span>}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', paddingTop: 14, borderTop: '1px solid var(--line)' }}>
@@ -185,6 +186,7 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
           </div>
         </div>
       </div>
+      {mig && <Migrate calc={calc} store={store} me={me} onClose={() => setMig(false)} />}
     </div>
   );
 }

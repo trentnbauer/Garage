@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 
 const API = 'https://api.cloudflare.com/client/v4';
 export const NAME = 'Garage', MARK = 'Managed by Garage';
-export const hostOf = url => String(url || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '').toLowerCase();
+export const hostOf = url => String(url || '').replace(/^https?:\/\//i, '').split('/')[0].toLowerCase();
 
 /** A Cloudflare API caller that throws errors fit to show the user. */
 export function cf(token, doFetch = fetch) {

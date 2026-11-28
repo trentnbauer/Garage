@@ -33,6 +33,11 @@ export const Head = ({ title, hint, st, max }: { title: string; hint: string; st
     <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, whiteSpace: 'nowrap', background: st[1] + '22', color: st[1] }}>{st[0]}</span>
   </div>
 );
+/** Says which of a card's settings come from the server's .env, where they have to be changed. */
+export const Locked = ({ g, re }: { g: Garage; re: RegExp }) => {
+  const vars = (g.envLocked || []).filter(v => re.test(v));
+  return vars.length ? <div role="note" style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '10px 14px', borderRadius: 12, fontSize: 12, lineHeight: 1.45, background: 'rgba(232,176,75,.12)', color: 'var(--warn)' }}><Icon n="lock" s={14} style={{ flex: 'none', marginTop: 1 }} /><span>Set in .env, so only changeable there: <span className="mono">{vars.join(', ')}</span></span></div> : null;
+};
 export const Line = ({ label, hint, on, flip }: { label: string; hint: string; on: boolean; flip: () => void }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
     <div style={{ minWidth: 0 }}><div style={{ fontSize: 14 }}>{label}</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{hint}</div></div><Toggle on={on} label={label} onClick={flip} />
@@ -73,6 +78,7 @@ export function AiTab({ store, g, nav }: { store: Store; g: Garage; nav: Nav }) 
   return (
     <div style={card}>
       <Head title="AI help" hint="Powers the AI button on build board cards: troubleshooting, parts lists, step-by-step guides." st={aiStatus(g)} />
+      <Locked g={g} re={/^AI_/} />
       <Line label="Turn on AI help" hint="Shows an AI button on every task card, for everyone in the garage" on={a.enabled} flip={() => put({ enabled: !a.enabled })} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,340px),1fr))', gap: '16px 24px', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -124,6 +130,7 @@ export function EmailTab({ store, g, me, nav }: { store: Store; g: Garage; me: U
   return (
     <div style={{ ...card, gap: 16 }}>
       <Head title="Email (SMTP)" hint="How Garage sends reminder digests, alerts and paperwork packs." st={smtpStatus(g)} />
+      <Locked g={g} re={/^(SMTP|EMAIL)_/} />
       <Line label="Send email" hint="Nothing is sent while this is off" on={s.enabled} flip={() => put({ enabled: !s.enabled })} />
       {sub('Server')}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -14,6 +14,9 @@
 //   PUT  /api/admin/ai {…, apiKey?: string|null}; POST /api/admin/ai/test
 //   PUT  /api/admin/smtp {…, pass?: string|null}; POST /api/admin/smtp/test { to }
 //   POST /api/ai { prompt } → { text }   (anyone signed in, while AI help is on)
+//   POST /api/admin/import/scan {mode:'volume', path} | {mode:'api', url, key | user+pass} → { token, dump, files: {name: size}, label }
+//   POST /api/admin/import/files { token, names } → { name: file }   (copies LubeLogger attachments into Garage's file store)
+//   GET  /api/admin/env?secrets=1 → { text, count }   (settings as a .env file; variables set in the environment lock their fields)
 //   GET  /api/admin/tunnel → status and log; PUT /api/admin/tunnel {accountId?, token?: string|null, appUrl?, allow?, enabled?}
 import { createServer } from 'node:http';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
@@ -25,6 +28,8 @@ import { newSecret, verify as totpOk } from './totp.js';
 import { askAI } from './ai.js';
 import { sendMail } from './smtp.js';
 import { applyTunnel, hostOf, runner } from './tunnel.js';
+import { fromEnv, lockedVars, lockOf, toEnv } from './env.js';
+import { fromApi, fromVolume } from './lube.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -47,7 +52,7 @@ export function checkPin(pin, stored) {
 }
 const validPin = p => typeof p === 'string' && /^\d{4,8}$/.test(p);
 
-export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, env = process.env } = {}) {
+export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, env = process.env, lubeFetch } = {}) {
   const filesDir = join(dataDir, 'files');
   // Lock a profile for a minute after 5 wrong PINs. In memory: a restart clears it.
   const fails = new Map();
@@ -73,6 +78,9 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
     } catch (e) { db.write({ tunnel: { ...c, error: e.message } }); return e.message; }
   };
   const tunSync = () => { const c = tunCfg(), run = db.read('secret:tunnelRun', ''); if (c.enabled && run) tunnel.start(run); else tunnel.stop(); };
+  // A field set by an environment variable can only change there; edits would quietly revert on restart.
+  const envSet = fromEnv(env, w => console.warn('Garage:', w));
+  const lockedIn = (doc, b, secret) => { for (const f of Object.keys(b)) { const k = f === secret?.[0] ? lockOf(env, secret[1], null) : lockOf(env, doc, f); if (k) return `${k} is set in .env, so it can only be changed there.`; } return ''; };
   const pick = (b, base) => Object.fromEntries(Object.keys(base).filter(k => k in b && typeof b[k] === typeof base[k]).map(k => [k, typeof b[k] === 'string' ? b[k].slice(0, 500) : b[k]]));
   const auth = () => ({ ...AUTH0, ...db.read('auth', {}) });
   // TOTP secrets live under their own keys, never in the state sent to browsers.
@@ -84,8 +92,10 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
     g.ai = { ...aiCfg(), hasKey: !!db.read('secret:aiKey', '') };
     g.smtp = { ...smtpCfg(), hasPass: !!db.read('secret:smtpPass', '') };
     g.tunnel = tunView();
+    g.envLocked = lockedVars(env);
     return g;
   };
+  const scans = new Map(); // import token → LubeLogger source, kept for 30 minutes between preview and import
   const tickets = new Map(), pending = new Map(); // second-step tickets and TOTP setups, both short-lived
   const log = (by, text) => db.write({ log: [{ id: randomBytes(5).toString('hex'), at: new Date().toISOString(), by, vid: null, text }, ...db.read('log', []) || []].slice(0, 500), version: version() + 1 });
   const version = () => db.read('version', 0);
@@ -120,13 +130,15 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         // First run: the browser sends the starting garage, including its first admin profile.
         const users = (b.garage?.users || []).slice(0, 20).map(u => ({ id: String(u.id), name: String(u.name || 'You').slice(0, 60), color: String(u.color || '#5b84ff'), role: u.role === 'admin' ? 'admin' : 'member' }));
         if (!users.some(u => u.role === 'admin')) return send(res, 400, { error: 'The first profile must be an admin.' });
-        db.write({ ...Object.fromEntries(DATA_KEYS.map(k => [k, b.garage?.[k] ?? null])), users, auth: { signins: false }, version: 1 });
+        db.write({ ...Object.fromEntries(DATA_KEYS.map(k => [k, b.garage?.[k] ?? null])), users, auth: { signins: false, ...envSet.auth }, version: 1 });
+        if (envSet.settings) db.write({ settings: { ...(b.garage?.settings || {}), ...envSet.settings } });
         return send(res, 200, { version: 1 });
       }
       if (!userOf(req)) return send(res, 401, { error: 'Sign in first.' });
       if (b.version !== version()) return send(res, 409, { error: 'Someone else saved changes. Reloading.', version: version() });
       const v = version() + 1, patch = { version: v };
       for (const k of DATA_KEYS) if (b.garage && k in b.garage) patch[k] = b.garage[k];
+      if (patch.settings && envSet.settings) patch.settings = { ...patch.settings, ...envSet.settings };
       db.write(patch);
       return send(res, 200, { version: v });
     }
@@ -209,6 +221,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
       if (!me || me.role !== 'admin') return send(res, 403, { error: 'Admins only.' });
       const b = await body(req), users = db.read('users', []), a = auth();
       if (path === '/api/admin/auth' && req.method === 'PUT') {
+        { const lk = lockedIn('auth', b); if (lk) return send(res, 400, { error: lk }); }
         const nx = { ...a };
         if (typeof b.signins === 'boolean') { if (b.signins && !db.hasPin(me.id)) return send(res, 400, { error: 'Set your own PIN first (Settings → Profile), or you’ll be locked out.' }); nx.signins = b.signins; }
         if (typeof b.tfaTotp === 'boolean') { nx.tfaTotp = b.tfaTotp; if (!b.tfaTotp) nx.tfaRequire = 'off'; }
@@ -242,6 +255,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         return send(res, 200, {});
       }
       if (path === '/api/admin/ai' && req.method === 'PUT') {
+        { const lk = lockedIn('ai', b, ['apiKey', 'secret:aiKey']); if (lk) return send(res, 400, { error: lk }); }
         const nx = { ...aiCfg(), ...pick(b, AI0) };
         if (!['anthropic', 'openai', 'ollama'].includes(nx.provider)) return send(res, 400, { error: 'Unknown provider.' });
         db.write({ ai: nx, ...(typeof b.apiKey === 'string' ? { 'secret:aiKey': b.apiKey.trim() } : b.apiKey === null ? { 'secret:aiKey': '' } : {}) });
@@ -254,6 +268,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         catch (e) { return send(res, 400, { error: e.message }); }
       }
       if (path === '/api/admin/smtp' && req.method === 'PUT') {
+        { const lk = lockedIn('smtp', b, ['pass', 'secret:smtpPass']); if (lk) return send(res, 400, { error: lk }); }
         const nx = { ...smtpCfg(), ...pick(b, SMTP0) };
         if (!['starttls', 'ssl', 'none'].includes(nx.security)) return send(res, 400, { error: 'Unknown security setting.' });
         db.write({ smtp: nx, ...(typeof b.pass === 'string' ? { 'secret:smtpPass': b.pass } : b.pass === null ? { 'secret:smtpPass': '' } : {}) });
@@ -268,8 +283,41 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
           log(me.id, 'sent a test email'); return send(res, 200, {});
         } catch (e) { return send(res, 400, { error: e.message }); }
       }
+      if (path === '/api/admin/import/scan' && req.method === 'POST') {
+        let src;
+        try {
+          if (b.mode === 'volume') { const p = String(b.path || '').trim(); if (!p.startsWith('/')) return send(res, 400, { error: 'Enter the folder path inside the container, starting with /.' }); src = fromVolume(p); }
+          else if (b.mode === 'api') src = await fromApi(b.url, b.user ? { user: String(b.user), pass: String(b.pass || '') } : { key: String(b.key || '') }, lubeFetch);
+          else return send(res, 400, { error: 'Pick the Docker volume or the API.' });
+        } catch (e) { return send(res, 400, { error: e.message }); }
+        if (!(src.dump.vehicles || []).length) return send(res, 400, { error: 'No vehicles found in that LubeLogger.' });
+        const t = randomBytes(16).toString('hex'); scans.set(t, { ...src, at: Date.now() });
+        for (const [k, v] of scans) if (Date.now() - v.at > 30 * 60_000) scans.delete(k);
+        return send(res, 200, { token: t, dump: src.dump, files: Object.fromEntries(Object.entries(src.files).map(([n, f]) => [n, f.size])), label: src.label, noFiles: !!src.noFiles, apiReminders: !!src.apiReminders });
+      }
+      if (path === '/api/admin/import/files' && req.method === 'POST') {
+        const sc = scans.get(String(b.token || '')); if (!sc) return send(res, 400, { error: 'That scan has expired. Scan again.' });
+        const out = {}; await mkdir(filesDir, { recursive: true });
+        for (const n of [...new Set((b.names || []).map(String))].slice(0, 5000)) {
+          const f = sc.files[n]; if (!f) continue;
+          try {
+            const data = await f.read(), ext = (n.split('.').pop() || '').toLowerCase();
+            const rec = { id: randomBytes(12).toString('hex'), name: n, type: { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf', eml: 'message/rfc822' }[ext] || 'application/octet-stream', size: data.length, at: new Date().toISOString(), by: me.id };
+            await writeFile(join(filesDir, rec.id), data); db.addFile(rec);
+            out[n] = { id: rec.id, type: rec.type, size: rec.size, src: '/api/files/' + rec.id };
+          } catch { /* a file that can't be read is left out; its name stays on the entry */ }
+        }
+        return send(res, 200, out);
+      }
+      if (path === '/api/admin/env' && req.method === 'GET') {
+        const secrets = new URL(req.url, 'http://x').searchParams.get('secrets') === '1';
+        const docs = { settings: () => db.read('settings', null) || {}, auth, ai: aiCfg, smtp: smtpCfg, tunnel: tunCfg };
+        if (secrets) log(me.id, 'exported settings as .env (with secrets)');
+        return send(res, 200, toEnv((doc, def) => (docs[doc] ? docs[doc]() : db.read(doc, def)), { secrets, port: PORT }));
+      }
       if (path === '/api/admin/tunnel' && req.method === 'GET') return send(res, 200, { ...tunView(), logs: tunnel.state().logs });
       if (path === '/api/admin/tunnel' && req.method === 'PUT') {
+        { const lk = lockedIn('tunnel', b, ['token', 'secret:cfToken']); if (lk) return send(res, 400, { error: lk }); }
         const c = tunCfg(), nx = { ...c };
         if (typeof b.accountId === 'string') { if (!/^[0-9a-f]{32}$/i.test(b.accountId.trim())) return send(res, 400, { error: 'That account ID doesn’t look right: it is 32 letters and numbers, from the dashboard address after dash.cloudflare.com/.' }); nx.accountId = b.accountId.trim().toLowerCase(); }
         if (typeof b.token === 'string' && b.token.trim().length < 30) return send(res, 400, { error: 'That API token looks too short. Copy the whole token from Cloudflare.' });
@@ -364,10 +412,15 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
   }
 
   // Docker: the CLOUDFLARE_* variables set up and run the tunnel on every start; TUNNEL_TOKEN runs a hand-made one.
+  // On start the environment wins over what's saved.
+  const prevUrl = tunCfg().appUrl;
+  for (const [doc, v] of Object.entries(envSet)) {
+    if (doc.startsWith('secret:')) db.write({ [doc]: v });
+    else if (doc !== 'settings' || db.read('settings', null)) db.write({ [doc]: { ...(doc === 'settings' ? db.read('settings', {}) : db.read(doc, {})), ...v } });
+  }
   if (env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID) {
-    const prev = tunCfg().appUrl;
-    db.write({ tunnel: { ...tunCfg(), enabled: true, accountId: env.CLOUDFLARE_ACCOUNT_ID.trim(), appUrl: env.APP_HOSTNAME ? 'https://' + hostOf(env.APP_HOSTNAME) : '', allow: (env.ACCESS_EMAILS || '').split(/[\s,]+/).filter(Boolean).join('\n') }, 'secret:cfToken': env.CLOUDFLARE_API_TOKEN.trim() });
-    tunSetup(prev).then(err => { if (err) console.error('Cloudflare tunnel setup failed:', err); tunSync(); });
+    if (env.TUNNEL_ENABLED === undefined) db.write({ tunnel: { ...tunCfg(), enabled: true } });
+    tunSetup(prevUrl).then(err => { if (err) console.error('Cloudflare tunnel setup failed:', err); tunSync(); });
   } else if (env.TUNNEL_TOKEN) tunnel.start(env.TUNNEL_TOKEN.trim());
   else tunSync(); // resume a tunnel that was running before a restart
   return createServer(async (req, res) => {

@@ -5,6 +5,7 @@ import {
 } from '../lib/actions.ts';
 import { addMonths, type Calc, type Col, COLNAME, DRIVE, type Drive, fdate, FUELS, lastGrade, nextDue, type Part, PCOL, PSTAT, syncRego, TCOL, tint, today, uid, type User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
+import { upload } from '../lib/files.ts';
 import { AskAI } from './AskAI.tsx';
 import { Icon } from './icons.tsx';
 
@@ -316,9 +317,18 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
   const users = g.users.filter(x => !x.removed);
   const who = (id?: string | null) => g.users.find(x => x.id === id) || { name: 'Someone', color: '#8d9099' };
   // Changes to an existing task's activity are saved straight away, like parts.
-  const patchActivity = (activity: CardForm['activity']) => {
-    up({ activity });
-    if (f.id) store.update(g2 => { const b = structuredClone(g2.boards[vid]); (Object.keys(b) as (keyof typeof b)[]).forEach(k => { b[k] = b[k].map(x => (x.id === f.id ? { ...x, activity } : x)); }); return { ...g2, boards: { ...g2.boards, [vid]: b } }; });
+  const patchCard = (p: Pick<Partial<CardForm>, 'activity' | 'photos'>) => {
+    up(p);
+    if (f.id) store.update(g2 => { const b = structuredClone(g2.boards[vid]); (Object.keys(b) as (keyof typeof b)[]).forEach(k => { b[k] = b[k].map(x => (x.id === f.id ? { ...x, ...p } : x)); }); return { ...g2, boards: { ...g2.boards, [vid]: b } }; });
+  };
+  const patchActivity = (activity: CardForm['activity']) => patchCard({ activity });
+  const [photoBusy, setPhotoBusy] = useState(''), photos = f.photos || [];
+  const addPhotos = async (files: File[]) => {
+    if (!files.length) return; setPhotoBusy('Processing…');
+    const ok: NonNullable<CardForm['photos']> = [];
+    for (const fl of files) { try { const r = await upload(fl, 1400); ok.push({ id: r.id, src: r.src }); } catch (e) { setPhotoBusy(''); nav.ask({ title: 'Couldn’t add that photo', body: (e as Error).message, label: 'OK', fn: () => {} }); } }
+    setPhotoBusy('');
+    if (ok.length) patchCard({ photos: [...photos, ...ok], activity: [...f.activity, ev(ok.length === 1 ? 'Added a photo' : `Added ${ok.length} photos`, me.id)] });
   };
   const addEvent = (text: string) => patchActivity([...f.activity, ev(text, me.id)]);
   const save = () => { if (!f.title.trim()) return; store.update(g2 => saveCard(g2, vid, f, me.id, calc.TODAY)); done(); };
@@ -375,6 +385,22 @@ function CardDialog({ d, set, calc, store, me, nav, narrow, close, done, dirty }
             </div>
           </div>
           <L label="Description"><textarea className="field" value={f.note} onChange={e => up({ note: e.target.value })} style={{ height: 'auto', minHeight: 64, padding: '10px 12px', resize: 'vertical' }} /></L>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Head label="Photos" count={photos.length ? String(photos.length) : ''} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(88px,1fr))', gap: 8 }}>
+              {photos.map((p, i) => (
+                <div key={p.id} style={{ position: 'relative', height: 88, borderRadius: 10, overflow: 'hidden', background: 'var(--card2)' }}>
+                  <button type="button" className="plain" aria-label={`View photo ${i + 1}`} onClick={() => nav.view(p.src)} style={{ width: '100%', height: '100%', backgroundImage: `url("${p.src}")`, backgroundSize: 'cover', backgroundPosition: 'center', cursor: 'zoom-in' }} />
+                  <button type="button" className="plain" title="Tag as before or after" onClick={() => patchCard({ photos: photos.map(x => (x.id === p.id ? { ...x, phase: !x.phase ? 'before' : x.phase === 'before' ? 'after' : undefined } : x)) })} style={{ position: 'absolute', left: 4, bottom: 4, height: 20, padding: '0 7px', borderRadius: 999, fontSize: 10, fontWeight: 600, display: 'flex', alignItems: 'center', background: p.phase ? 'var(--acc)' : 'rgba(0,0,0,.65)', color: p.phase ? 'var(--accfg)' : '#fff' }}>{p.phase === 'before' ? 'Before' : p.phase === 'after' ? 'After' : '+ Tag'}</button>
+                  <button type="button" className="plain" title="Remove photo" aria-label={`Remove photo ${i + 1}`} onClick={() => nav.ask({ title: 'Delete this photo?', body: 'The photo will be removed from the task.', label: 'Delete photo', fn: () => patchCard({ photos: photos.filter(x => x.id !== p.id) }) })} style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(0,0,0,.65)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon n="x" s={12} /></button>
+                </div>
+              ))}
+              <label className="drop" style={{ cursor: 'pointer', height: 88, borderRadius: 10, border: '1px dashed var(--line2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, color: 'var(--mut)', fontSize: 12 }}>
+                <Icon n="camera" s={18} />{photoBusy || 'Add photos'}
+                <input type="file" accept="image/*" multiple onChange={e => { const fs = [...(e.target.files || [])]; e.target.value = ''; addPhotos(fs); }} style={{ display: 'none' }} />
+              </label>
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>

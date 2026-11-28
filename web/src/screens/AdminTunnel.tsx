@@ -3,7 +3,7 @@ import { type CSSProperties, useEffect, useState } from 'react';
 import type { Nav } from '../App.tsx';
 import type { Garage, TunCfg } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
-import { card, Head, lab, mono } from './AdminMail.tsx';
+import { card, Head, lab, Locked, mono } from './AdminMail.tsx';
 import { Toggle } from './Settings.tsx';
 
 const SL = { stopped: 'Stopped', starting: 'Connecting…', connected: 'Connected', error: 'Problem' }, SC = { stopped: '#8d9099', starting: '#e8b04b', connected: '#3fcf8e', error: '#f2685f' };
@@ -56,6 +56,7 @@ export function TunnelTab({ store, g, nav }: { store: Store; g: Garage; nav: Nav
   return (
     <div style={card}>
       <Head title="Cloudflare tunnel" hint="Reach Garage from outside your network with no open ports. Garage makes the tunnel, its routes and the DNS records through the Cloudflare API, and runs the bundled cloudflared with it." st={[SL[st], SC[st]]} max={640} />
+      <Locked g={g} re={/^(TUNNEL_ENABLED|CLOUDFLARE_|APP_HOSTNAME|ACCESS_EMAILS)/} />
       {msg && <div role={msg.ok ? 'status' : 'alert'} style={{ padding: '10px 14px', borderRadius: 12, fontSize: 13, background: msg.ok ? 'rgba(63,207,142,.1)' : 'rgba(242,104,95,.1)', color: msg.ok ? 'var(--up)' : 'var(--down)' }}>{msg.text}</div>}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
         <div style={{ minWidth: 0 }}><div style={{ fontSize: 14 }}>Run the tunnel</div><div style={{ fontSize: 12, color: 'var(--mut)' }}><b style={{ fontWeight: 600, color: SC[st] }}>{SL[st]}</b> · {hint}</div></div>
