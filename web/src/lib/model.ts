@@ -55,7 +55,7 @@ export interface ShelfItem { id: string; name: string; partNo: string; qty: numb
 
 export interface User {
   id: string; name: string; email?: string; provider?: string; color: string; role: 'admin' | 'member'; removed?: boolean;
-  hasPin?: boolean; hasTotp?: boolean; // the PIN and TOTP secret never leave the server
+  hasPin?: boolean; hasTotp?: boolean; passkeys?: { id: string; name: string; at: string }[]; // PINs, TOTP secrets and passkey keys never leave the server
 }
 
 export interface Settings {
@@ -66,7 +66,7 @@ export interface Settings {
 export interface Garage {
   vehicles: Vehicle[]; records: Rec[]; reminders: Reminder[]; parts: Part[]; boards: Record<string, Board>;
   notes: Record<string, string>; shelf: ShelfItem[]; users: User[]; settings: Settings;
-  auth: { signins: boolean; tfaTotp?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
+  auth: { signins: boolean; tfaTotp?: boolean; tfaPasskey?: boolean; tfaRequire?: 'off' | 'admins' | 'all'; google?: boolean; oProvider?: string; oName?: string; issuer?: string; clientId?: string; scopes?: string; allowed?: string; googleRole?: 'admin' | 'member'; hasSecret?: boolean };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
   /** Admin-set integrations, sent by the server. Their secrets stay there: only whether one is saved. */
   ai?: AiCfg; smtp?: SmtpCfg; tunnel?: TunCfg; envLocked?: string[]; // variables set in the server's environment
@@ -386,3 +386,5 @@ export function buildIcs(c: Calc) {
 }
 
 export const fmtSize = (n: number) => (!n ? '' : n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+/** Whether someone has a second step set up that's switched on: an authenticator app or a passkey. */
+export const has2fa = (u: User, a: Garage['auth']) => !!((a.tfaTotp !== false && u.hasTotp) || (a.tfaPasskey !== false && u.passkeys?.length));

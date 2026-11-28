@@ -10,7 +10,7 @@ export type Store = {
   g: Garage | null; me: string | null; error: string;
   update: (fn: (g: Garage) => Garage) => void;
   /** Sign in. `ticket` means a second step is needed: send the authenticator code to loginTotp. */
-  login: (userId: string, cred: { pin?: string; newPin?: string; code?: string }) => Promise<{ error?: string; ticket?: string }>;
+  login: (userId: string, cred: { pin?: string; newPin?: string; code?: string }) => Promise<{ error?: string; ticket?: string; totp?: boolean; passkey?: boolean }>;
   loginTotp: (ticket: string, code: string) => Promise<string>; // '' on success, else the reason
   /** Account and admin calls; reloads the garage after a change. */
   api: (method: string, path: string, body?: unknown) => Promise<{ ok: boolean; json: Record<string, unknown> & { error?: string } }>;
@@ -73,7 +73,7 @@ export function useStore(): Store {
     if (DEMO) { setS(cur => cur && { ...cur, me: userId }); return {}; }
     const r = await call('POST', '/api/login', { userId, ...cred });
     if (!r.ok) return { error: r.json.error || 'Couldn’t sign in' };
-    if (r.json.tfa) return { ticket: r.json.ticket as string };
+    if (r.json.tfa) return { ticket: r.json.ticket as string, totp: !!r.json.totp, passkey: !!r.json.passkey };
     await load();
     return {};
   }, [load]);

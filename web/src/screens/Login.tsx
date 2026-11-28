@@ -1,6 +1,7 @@
-import { type CSSProperties, type FormEvent, useState } from 'react';
+import { type CSSProperties, type FormEvent, useEffect, useState } from 'react';
 import { UCOLORS } from '../lib/model.ts';
-import type { Store } from '../lib/store.ts';
+import { DEMO, type Store } from '../lib/store.ts';
+import { passkeySignIn, pkError } from '../lib/passkey.ts';
 import { Icon, type IconName } from '../ui/icons.tsx';
 
 const FEATURES: [IconName, string, string][] = [
@@ -12,17 +13,29 @@ const FEATURES: [IconName, string, string][] = [
 
 export function Login({ store }: { store: Store }) {
   const g = store.g!, on = g.auth.signins;
-  const users = g.users.filter(u => !u.removed && u.provider !== 'google');
+  const oauth = on && !!g.auth.google, [pinOpen, setPinOpen] = useState(false);
+  // In OAuth2 mode only admins see profiles, behind a link: a way back in if the provider is down.
+  const users = g.users.filter(u => !u.removed && (!oauth || (pinOpen && u.role === 'admin')));
   const [pinFor, setPinFor] = useState<string | null>(null);
   const [pin, setPin] = useState(''), [err, setErr] = useState('');
   const [adding, setAdding] = useState(false);
   const [mode, setMode] = useState<'pin' | 'code'>('pin');
-  const [tfa, setTfa] = useState<{ ticket: string; name: string } | null>(null), [code, setCode] = useState('');
+  const [tfa, setTfa] = useState<{ ticket: string; name: string; totp?: boolean; passkey?: boolean } | null>(null), [code, setCode] = useState('');
+  const pkOn = g.auth.tfaPasskey !== false && !DEMO;
+  // Back from the OAuth2 provider: an error to show, or the second step to finish.
+  useEffect(() => {
+    const q = new URLSearchParams(location.search), e = q.get('oauth'), t = q.get('tfa');
+    if (!e && !t) return;
+    if (e) setErr(e);
+    if (t) setTfa({ ticket: t, name: q.get('name') || '', totp: q.get('totp') === '1', passkey: q.get('passkey') === '1' });
+    history.replaceState(null, '', location.pathname);
+  }, []);
+  const pkGo = async (ticket?: string) => { setErr(''); try { await passkeySignIn(ticket); await store.api('GET', '/api/state'); } catch (e) { setErr(pkError(e)); } };
   const [nu, setNu] = useState({ name: '', pin: '', color: UCOLORS[users.length % UCOLORS.length] });
   const needPin = (u: typeof users[0]) => on || u.role === 'admin';
   const px = users.find(u => u.id === pinFor), setting = !!px && !px.hasPin;
   const canCode = !!px && !!px.hasTotp && g.auth.tfaTotp !== false && !setting;
-  const result = (r: { error?: string; ticket?: string }, name: string) => { if (r.ticket) { setTfa({ ticket: r.ticket, name }); setPinFor(null); setCode(''); setErr(''); } else if (r.error) { setErr(r.error); setPin(''); } };
+  const result = (r: { error?: string; ticket?: string; totp?: boolean; passkey?: boolean }, name: string) => { if (r.ticket) { setTfa({ ticket: r.ticket, name, totp: r.totp, passkey: r.passkey }); setPinFor(null); setCode(''); setErr(''); } else if (r.error) { setErr(r.error); setPin(''); } };
 
   const pick = async (u: typeof users[0]) => {
     setAdding(false); setErr('');
@@ -70,8 +83,12 @@ export function Login({ store }: { store: Store }) {
         <div style={{ width: 'min(480px,100%)', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
             <div className="kicker">Sign in</div>
-            <div className="title" style={{ marginTop: 6 }}>Who’s in the garage?</div>
+            <div className="title" style={{ marginTop: 6 }}>{oauth ? 'Sign in to the garage' : 'Who’s in the garage?'}</div>
           </div>
+          {oauth && !tfa && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a href="/api/oauth/start" className="plain" style={{ boxSizing: 'border-box', height: 48, padding: '0 22px', borderRadius: 999, background: '#fff', color: '#1f1f1f', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, alignSelf: 'flex-start', textDecoration: 'none' }}><Icon n="lock" s={18} />Continue with {g.auth.oName || 'SSO'}</a>
+            <button type="button" className="plain to-fg" onClick={() => { setPinOpen(!pinOpen); setPinFor(null); setErr(''); }} style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--mut)' }}>{pinOpen ? 'Hide admin sign-in' : 'Admin? Sign in with your PIN'}</button>
+          </div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(130px,1fr))', gap: 12 }}>
             {users.map(u => (
               <button key={u.id} className={'who' + (pinFor === u.id ? ' on' : '')} onClick={() => pick(u)}>
@@ -96,18 +113,20 @@ export function Login({ store }: { store: Store }) {
                 <button type="submit" className="btn-p" style={{ height: 40, padding: '0 18px' }}>Sign in</button>
               </div>
               {err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
-              {canCode && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', paddingTop: 4 }}><span style={{ fontSize: 12, color: 'var(--mut)' }}>Or use</span>
-                <button type="button" className="btn" style={{ boxSizing: 'border-box', height: 30, padding: '0 12px', fontSize: 12 }} onClick={() => { setMode(mode === 'code' ? 'pin' : 'code'); setPin(''); setErr(''); }}>{mode === 'code' ? 'PIN' : 'Authenticator code'}</button></div>}
+              {(canCode || (pkOn && !!px.passkeys?.length && !setting)) && <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', paddingTop: 4 }}><span style={{ fontSize: 12, color: 'var(--mut)' }}>Or use</span>
+                {canCode && <button type="button" className="btn" style={{ boxSizing: 'border-box', height: 30, padding: '0 12px', fontSize: 12 }} onClick={() => { setMode(mode === 'code' ? 'pin' : 'code'); setPin(''); setErr(''); }}>{mode === 'code' ? 'PIN' : 'Authenticator code'}</button>}
+                {pkOn && !!px.passkeys?.length && !setting && <button type="button" className="btn" style={{ boxSizing: 'border-box', height: 30, padding: '0 12px', fontSize: 12 }} onClick={() => pkGo()}><Icon n="lock" s={14} />Passkey</button>}</div>}
             </form>
           )}
 
           {tfa && (
             <form className="box" style={{ border: '1px solid var(--acc)' }} onSubmit={async e => { e.preventDefault(); const r = await store.loginTotp(tfa.ticket, code); if (r) { setErr(r); setCode(''); } }}>
               <span style={{ fontSize: 14 }}>Two-factor for <b>{tfa.name}</b></span>
-              <div style={{ display: 'flex', gap: 8 }}>
+              {tfa.totp !== false && <div style={{ display: 'flex', gap: 8 }}>
                 <input className="field" inputMode="numeric" autoComplete="one-time-code" autoFocus placeholder="6-digit code" aria-label="Authenticator code" value={code} onChange={e => { setCode(digits(e.target.value).slice(0, 6)); setErr(''); }} style={{ flex: 1, fontFamily: 'var(--mono)', letterSpacing: '.2em' }} />
                 <button type="submit" className="btn-p" style={{ height: 40 }}>Verify</button>
-              </div>
+              </div>}
+              {tfa.passkey && pkOn && <button type="button" className="btn" onClick={() => pkGo(tfa.ticket)} style={{ alignSelf: 'flex-start' }}><Icon n="lock" s={15} />Use a passkey</button>}
               {err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
               <button type="button" className="plain" onClick={() => { setTfa(null); setErr(''); }} style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--mut)' }}>Cancel</button>
             </form>
@@ -130,10 +149,11 @@ export function Login({ store }: { store: Store }) {
               {err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
             </form>
           )}
+          {pkOn && users.some(u => u.passkeys?.length) && !px && !tfa && <button type="button" className="btn" onClick={() => pkGo()} style={{ height: 44, alignSelf: 'flex-start' }}><Icon n="lock" s={16} />Sign in with a passkey</button>}
           {!px && !adding && err && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{err}</span>}
 
           <span style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.5 }}>
-            {on ? 'Everyone signs in with their PIN or an authenticator code. Ask an admin to add you.' : 'Sign-ins are off: anyone here can pick or make a profile. Admin profiles still need a PIN. Turn sign-ins on in Admin settings before opening Garage to the internet.'}
+            {oauth ? `Sign in with ${g.auth.oName || 'OAuth2'}. Only accounts an admin has allowed can get in.` : on ? 'Everyone signs in with their PIN, an authenticator code or a passkey. Ask an admin to add you.' : 'Sign-ins are off: anyone here can pick or make a profile. Admin profiles still need a PIN. Turn sign-ins on in Admin settings before opening Garage to the internet.'}
           </span>
         </div>
       </div>

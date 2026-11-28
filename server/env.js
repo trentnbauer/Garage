@@ -8,7 +8,17 @@ export const VARS = [
   ['GARAGE_CURRENCY', 'settings', 'currency', 'str'],
   ['AUTH_SIGNINS', 'auth', 'signins', 'bool'],
   ['AUTH_TOTP', 'auth', 'tfaTotp', 'bool'],
+  ['AUTH_PASSKEYS', 'auth', 'tfaPasskey', 'bool'],
   ['AUTH_2FA_REQUIRED', 'auth', 'tfaRequire', 'enum', ['off', 'admins', 'all']],
+  ['AUTH_OAUTH', 'auth', 'google', 'bool'],
+  ['OAUTH_PROVIDER', 'auth', 'oProvider', 'enum', ['google', 'microsoft', 'github', 'authentik', 'authelia', 'keycloak', 'custom']],
+  ['OAUTH_NAME', 'auth', 'oName', 'str'],
+  ['OAUTH_ISSUER', 'auth', 'issuer', 'str'],
+  ['OAUTH_CLIENT_ID', 'auth', 'clientId', 'str'],
+  ['OAUTH_CLIENT_SECRET', 'secret:oauthSecret', null, 'secret'],
+  ['OAUTH_SCOPES', 'auth', 'scopes', 'str'],
+  ['OAUTH_ALLOWED', 'auth', 'allowed', 'list'],
+  ['OAUTH_DEFAULT_ROLE', 'auth', 'googleRole', 'enum', ['member', 'admin']],
   ['AI_ENABLED', 'ai', 'enabled', 'bool'],
   ['AI_PROVIDER', 'ai', 'provider', 'enum', ['anthropic', 'openai', 'ollama']],
   ['AI_MODEL', 'ai', 'model', 'str'],
@@ -36,7 +46,7 @@ export const VARS = [
   ['APP_HOSTNAME', 'tunnel', 'appUrl', 'host'],
   ['ACCESS_EMAILS', 'tunnel', 'allow', 'list'],
 ];
-const GROUPS = { settings: 'General', auth: 'Sign-in', ai: 'AI help', 'secret:aiKey': 'AI help', smtp: 'Email (SMTP)', 'secret:smtpPass': 'Email (SMTP)', tunnel: 'Cloudflare tunnel', 'secret:cfToken': 'Cloudflare tunnel' };
+const GROUPS = { settings: 'General', auth: 'Sign-in', 'secret:oauthSecret': 'Sign-in', ai: 'AI help', 'secret:aiKey': 'AI help', smtp: 'Email (SMTP)', 'secret:smtpPass': 'Email (SMTP)', tunnel: 'Cloudflare tunnel', 'secret:cfToken': 'Cloudflare tunnel' };
 const SHARE = [['shareManual', 'manual'], ['shareSpecs', 'specs'], ['shareHistory', 'history'], ['shareNotes', 'notes']];
 
 /** The variables set in env (an empty value counts: it says "blank"). */

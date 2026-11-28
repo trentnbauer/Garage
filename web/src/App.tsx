@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useState } from 'react';
-import { accentTheme, Calc, type Sec } from './lib/model.ts';
+import { accentTheme, Calc, has2fa, type Sec } from './lib/model.ts';
 import { useStore, usePersisted } from './lib/store.ts';
 import { Login } from './screens/Login.tsx';
 import { Home } from './screens/Home.tsx';
@@ -33,7 +33,7 @@ export function App() {
   const nav: Nav = { ui, go: p => setUi(u => ({ ...u, ...p })), soon: () => setToast('That part of Garage isn’t built yet.'), ask: setAsk, open: setDlg, view: setPhoto };
   const calc = new Calc(g);
   // Two-factor required but not set up: Settings until it is.
-  const nag = !!meU && g.auth.tfaTotp !== false && !meU.hasTotp && (g.auth.tfaRequire === 'all' || (g.auth.tfaRequire === 'admins' && meU.role === 'admin'));
+  const nag = !!meU && (g.auth.tfaTotp !== false || g.auth.tfaPasskey !== false) && !has2fa(meU, g.auth) && (g.auth.tfaRequire === 'all' || (g.auth.tfaRequire === 'admins' && meU.role === 'admin'));
   const car = g.vehicles.find(v => v.id === ui.activeId) || g.vehicles[0];
 
   return (
