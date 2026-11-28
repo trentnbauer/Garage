@@ -4,6 +4,7 @@ import { fmtSize, upload } from '../lib/files.ts';
 import { track } from '../lib/actions.ts';
 import { Icon } from '../ui/icons.tsx';
 import { Paperwork } from '../ui/Paperwork.tsx';
+import { readPages } from '../lib/manual.ts';
 import type { Tab } from './Car.tsx';
 
 type Field = { label: string; k: keyof Vehicle; num?: boolean; mono?: boolean; wide?: boolean; type?: string; ph?: string; options?: (string | [string | number, string])[]; noBlank?: boolean; def?: string | number };
@@ -12,7 +13,20 @@ const card = { breakInside: 'avoid' as const, marginBottom: 12, background: 'var
 
 export function Details({ calc, car, nav, store, me }: Tab) {
   const g = calc.g, u = calc.u, vid = car.id;
-  const [photoMsg, setPhotoMsg] = useState(''), [docMsg, setDocMsg] = useState(''), [pw, setPw] = useState(false);
+  const [photoMsg, setPhotoMsg] = useState(''), [docMsg, setDocMsg] = useState(''), [pw, setPw] = useState(false), [manMsg, setManMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const mans = car.manuals || [];
+  const addManual = async (e: ChangeEvent<HTMLInputElement>) => {
+    const fl = e.target.files?.[0]; e.target.value = ''; if (!fl) return;
+    setManMsg({ ok: true, t: `Reading ${fl.name}…` });
+    try {
+      const pages = await readPages(fl, t => setManMsg({ ok: true, t }));
+      setManMsg({ ok: true, t: `Uploading ${fl.name}…` });
+      const file = await upload(fl), text = await upload(new File([JSON.stringify(pages)], fl.name + '.pages.json', { type: 'application/json' }));
+      const m = { id: file.id, name: fl.name, pages: pages.length, size: file.size, at: file.at, src: file.src, text: text.src };
+      store.update(g2 => track({ ...g2, vehicles: g2.vehicles.map(x => (x.id === vid ? { ...x, manuals: [...(x.manuals || []), m] } : x)) }, me.id, vid, `uploaded workshop manual "${fl.name}"`));
+      setManMsg({ ok: true, t: `Added ${fl.name} · ${pages.length} pages. AI will check it first.` });
+    } catch (err) { setManMsg({ ok: false, t: (err as Error).message || 'Couldn’t read that file.' }); }
+  };
   const setCar = (p: Partial<Vehicle>, rego = false) => store.update(g2 => { const vehicles = g2.vehicles.map(x => (x.id === vid ? { ...x, ...p } : x)); return rego ? { ...g2, vehicles, reminders: syncRego(vehicles, g2.reminders) } : { ...g2, vehicles }; });
   const onField = (f: Field) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const raw = e.target.value, val = f.num ? (raw === '' ? '' : +raw) : raw;
@@ -72,9 +86,18 @@ export function Details({ calc, car, nav, store, me }: Tab) {
       </div>
 
       <div style={card}>
-        <div className="card-h" style={{ gap: 12 }}><span className="card-t">Workshop manual</span><span className="mono mut" style={{ fontSize: 11 }} /></div>
+        <div className="card-h" style={{ gap: 12 }}><span className="card-t">Workshop manual</span><span className="mono mut" style={{ fontSize: 11 }}>{mans.length ? `${mans.length} file${mans.length > 1 ? 's' : ''}` : ''}</span></div>
         <span style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.45 }}>Upload the factory or Haynes manual as a PDF. When you ask AI about a task, it looks up the relevant pages here first and cites them.</span>
-        <button className="dashed" onClick={nav.soon} style={{ boxSizing: 'border-box', height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13 }}><Icon n="upload" />Upload workshop manual (PDF)</button>
+        {mans.map(m => (
+          <div key={m.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 12px', borderRadius: 12, background: 'var(--card2)' }}>
+            <span className="mono" style={{ flex: 'none', fontSize: 10, fontWeight: 700, padding: '3px 6px', borderRadius: 4, background: 'var(--accs)', color: 'var(--acc)' }}>{(m.name.split('.').pop() || 'PDF').toUpperCase().slice(0, 4)}</span>
+            <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</div><div className="mono mut" style={{ fontSize: 11 }}>{[`${m.pages} pages`, fmtSize(m.size), 'added ' + fdate(m.at.slice(0, 10))].filter(Boolean).join(' · ')}</div></div>
+            <a className="btn" href={m.src} target="_blank" rel="noreferrer" style={{ height: 30, padding: '0 12px', fontSize: 12, textDecoration: 'none', color: 'var(--fg)' }}>Open</a>
+            <button className="plain icon-btn ghost-del" title="Remove manual" aria-label={`Remove ${m.name}`} onClick={() => nav.ask({ title: 'Remove this manual?', body: `“${m.name}” will be removed. AI help stops using it.`, label: 'Remove manual', fn: () => { setManMsg(null); store.update(g2 => ({ ...g2, vehicles: g2.vehicles.map(x => (x.id === vid ? { ...x, manuals: (x.manuals || []).filter(y => y.id !== m.id) } : x)) })); } })} style={{ width: 30, height: 30, borderRadius: 9 }}><Icon n="trash" s={15} /></button>
+          </div>
+        ))}
+        <label className="dashed" style={{ cursor: 'pointer', boxSizing: 'border-box', height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 13 }}><Icon n="upload" />{mans.length ? 'Add another manual' : 'Upload workshop manual (PDF)'}<input type="file" accept="application/pdf,.pdf,.txt,.md" onChange={addManual} style={{ display: 'none' }} /></label>
+        {manMsg && <span role={manMsg.ok ? 'status' : 'alert'} style={{ fontSize: 12, color: manMsg.ok ? 'var(--mut)' : 'var(--down)' }}>{manMsg.t}</span>}
       </div>
 
       <div style={card}>

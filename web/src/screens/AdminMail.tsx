@@ -74,7 +74,7 @@ export function AiTab({ store, g, nav }: { store: Store; g: Garage; nav: Nav }) 
     const r = await store.api('POST', '/api/admin/ai/test');
     setBusy(false); setRes(r.ok ? { ok: true, text: `Connected · replied “${String(r.json.text || '').trim().slice(0, 40)}”` } : { ok: false, text: r.json.error || 'Couldn’t reach the AI provider.' });
   };
-  const share: [keyof AiCfg, string, boolean?][] = [['shareManual', 'Workshop manual · none uploaded', true], ['shareSpecs', 'Car specs'], ['shareHistory', 'Service history'], ['shareNotes', 'Owner notes']];
+  const share: [keyof AiCfg, string, boolean?][] = [['shareManual', g.vehicles.some(v => (v.manuals || []).length) ? 'Workshop manual' : 'Workshop manual · none uploaded', !g.vehicles.some(v => (v.manuals || []).length)], ['shareSpecs', 'Car specs'], ['shareHistory', 'Service history'], ['shareNotes', 'Owner notes']];
   return (
     <div style={card}>
       <Head title="AI help" hint="Powers the AI button on build board cards: troubleshooting, parts lists, step-by-step guides." st={aiStatus(g)} />

@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { track } from '../lib/actions.ts';
+import { excerpts, mergeSpecs, SPEC_QUERY, specPrompt } from '../lib/manual.ts';
 import { SPEC_DEF, type SpecRow, type Specs as SpecsT, uid } from '../lib/model.ts';
 import { Icon } from '../ui/icons.tsx';
 import type { Tab } from './Car.tsx';
@@ -5,7 +8,7 @@ import type { Tab } from './Car.tsx';
 type Group = { key: string; title: string; hint: string; cols: [string, string, string, number][]; rows: SpecRow[]; addLabel: string; custom: boolean; canHide: boolean;
   add: () => void; setCell: (i: number, f: string, v: string) => void; removeRow: (i: number) => void; hide: () => void; onTitle?: (t: string) => void; titleV?: string };
 
-export function Specs({ car, nav, store }: Tab) {
+export function Specs({ calc, car, nav, store, me }: Tab) {
   const sp: SpecsT = car.specs || {}, shown: string[] = sp._shown || [];
   const setSp = (fn: (o: SpecsT) => SpecsT) => store.update(g => ({ ...g, vehicles: g.vehicles.map(x => (x.id === car.id ? { ...x, specs: fn(structuredClone(x.specs || {})) } : x)) }));
   const filled = (rows: SpecRow[]) => rows.some(r => Object.values(r || {}).some(Boolean));
@@ -30,14 +33,30 @@ export function Specs({ car, nav, store }: Tab) {
   const avail = Object.entries(SPEC_DEF).filter(([k, d]) => !d[3] && !(sp[k] || []).length && !shown.includes(k))
     .map(([k, d]) => ({ label: '+ ' + d[0], add: () => setSp(o => ({ ...o, _shown: [...(o._shown || []), k], [k]: o[k]?.length ? o[k] : (d[5] || ['']).map(t => ({ [d[2][0][0]]: t })) })) }));
   avail.push({ label: '+ Custom section', add: () => setSp(o => ({ ...o, custom: [...(o.custom || []), { id: uid(), title: '', rows: [{}] }] })) });
-  const hasManual = !!car.manuals?.length;
+  const hasManual = !!car.manuals?.length, aiOn = !!calc.g.ai?.enabled;
+  const [ai, setAi] = useState<{ busy?: boolean; ok?: boolean; msg?: string; undo?: SpecsT | null }>({});
+  const can = hasManual && aiOn && !ai.busy;
+  const fill = async () => {
+    if (!can) { if (!hasManual) nav.go({ sec: 'details' }); return; }
+    setAi({ busy: true });
+    try {
+      const ex = await excerpts(car, SPEC_QUERY);
+      if (!ex.length) throw new Error('Couldn’t find spec pages in the manual. Check its text is searchable on the Manual tab.');
+      const r = await store.ai(specPrompt([car.year, car.make, car.model, car.engine].filter(Boolean).join(' '), SPEC_DEF, ex));
+      if (r.error) throw new Error(r.error);
+      const before = structuredClone(car.specs || {}), m = mergeSpecs(before, r.text || '', SPEC_DEF), n = m.added + m.filled;
+      if (n) store.update(g => track({ ...g, vehicles: g.vehicles.map(x => (x.id === car.id ? { ...x, specs: m.specs } : x)) }, me.id, car.id, `filled ${n} specs from the manual with AI`));
+      setAi({ ok: true, undo: n ? before : null, msg: n ? `Added ${m.added} spec${m.added === 1 ? '' : 's'}${m.filled ? ` and filled ${m.filled} blank value${m.filled === 1 ? '' : 's'}` : ''} from the manual${m.pages.length ? ' (p. ' + m.pages.slice(0, 8).join(', ') + (m.pages.length > 8 ? '…' : '') + ')' : ''}. Check them against the page before relying on them.` : 'Nothing new found — everything the manual covers is already filled in.' });
+    } catch (e) { setAi({ ok: false, msg: (e as Error).message || 'The AI request failed.' }); }
+  };
 
   return <>
     <div style={{ background: 'var(--card)', border: '1px solid var(--line)', borderRadius: 20, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
       <div style={{ flex: 1, minWidth: 240 }}><div className="card-t">Fill from the workshop manual</div>
-        <div style={{ fontSize: 12, color: 'var(--mut)', lineHeight: 1.5 }}>{hasManual ? 'AI reads the spec pages of your manual and adds what it finds. It only fills blanks — nothing you’ve entered is changed.' : 'Upload a workshop manual in Car details and AI can pull torque settings, capacities, tune and alignment specs from it.'}</div></div>
-      <button type="button" className="plain" onClick={() => (hasManual ? nav.soon() : nav.go({ sec: 'details' }))} title={hasManual ? 'Find specs in the manual and add them here' : 'Upload a workshop manual first'}
-        style={{ cursor: 'not-allowed', height: 36, padding: '0 16px', borderRadius: 999, background: 'var(--card2)', color: 'var(--mut)', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><Icon n="sparkle" s={15} />Fill with AI</button>
+        <div role={ai.msg ? (ai.ok ? 'status' : 'alert') : undefined} style={{ fontSize: 12, color: ai.msg && !ai.ok ? 'var(--down)' : 'var(--mut)', lineHeight: 1.5 }}>{ai.msg || (!hasManual ? 'Upload a workshop manual in Car details and AI can pull torque settings, capacities, tune and alignment specs from it.' : !aiOn ? 'AI help is turned off. An admin can turn it on in Admin settings → AI help.' : 'AI reads the spec pages of your manual and adds what it finds. It only fills blanks — nothing you’ve entered is changed.')}</div></div>
+      {ai.undo && !ai.busy && <button type="button" className="btn" onClick={() => { const prev = ai.undo!; setSp(() => prev); setAi({ ok: true, msg: 'Undone.' }); }}>Undo</button>}
+      <button type="button" className="plain" onClick={fill} title={!hasManual ? 'Upload a workshop manual first' : !aiOn ? 'AI help is off in Admin settings' : 'Find specs in the manual and add them here'}
+        style={{ cursor: can ? 'pointer' : 'not-allowed', height: 36, padding: '0 16px', borderRadius: 999, background: can ? 'var(--acc)' : 'var(--card2)', color: can ? 'var(--accfg)' : 'var(--mut)', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}><Icon n="sparkle" s={15} />{ai.busy ? 'Reading the manual…' : 'Fill with AI'}</button>
     </div>
     <div style={{ columns: '2 420px', columnGap: 12 }}>
       {groups.map(gr => (

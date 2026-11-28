@@ -6,6 +6,8 @@ export type RecType = 'Service' | 'Repair' | 'Inspection' | 'Upgrade' | 'Fuel' |
 export type Drive = 'N/A' | 'Around the block' | 'Moving in garage';
 
 export interface FileRef { id: string; name: string; type: string; size: number; src: string; at: string }
+/** A workshop manual: the file, and its text page by page (a JSON file) for search and AI help. */
+export interface Manual { id: string; name: string; pages: number; size: number; at: string; src: string; text: string }
 export interface OdoReading { date: string; odo: number; src: 'reading' | 'correction' | 'import'; key?: string }
 
 export interface Vehicle {
@@ -15,7 +17,7 @@ export interface Vehicle {
   purchaseDate?: string; purchasePrice?: number | ''; purchaseOdo?: number | ''; estValue?: number | '' | null;
   regoExpiry?: string; regoTerm?: 3 | 6 | 12; insurer?: string; policyNo?: string; insuranceRenewal?: string; claimsPhone?: string;
   coverType?: string; agreedValue?: number | ''; premium?: number | ''; boughtFrom?: string;
-  photo?: string; docs?: (FileRef & { kind: 'rego' | 'rwc' | 'insurance' | 'purchase' })[]; specs?: Specs; manuals?: { id: string; name: string; pages: number }[];
+  photo?: string; docs?: (FileRef & { kind: 'rego' | 'rwc' | 'insurance' | 'purchase' })[]; specs?: Specs; manuals?: Manual[];
   sold?: { date: string; price: number | null; to: string } | null; odoLog?: OdoReading[];
   src?: string; srcKeys?: string[]; noteKeys?: string[];
 }

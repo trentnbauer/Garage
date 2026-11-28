@@ -40,7 +40,7 @@ export function aiContext(calc: Calc, vid: string, f: CardForm): string {
   return L.join('\n');
 }
 
-export type AiMsg = { role: 'user' | 'ai'; text: string; saved?: boolean };
+export type AiMsg = { role: 'user' | 'ai'; text: string; saved?: boolean; refs?: string };
 /** One request carries the context and the conversation so far; the server adds the mechanic instructions. */
-export const aiPrompt = (ctx: string, thread: AiMsg[], q: string) =>
-  `--- CAR AND TASK ---\n${ctx}\n--- END ---\n\n${thread.map(m => (m.role === 'user' ? 'Owner: ' : 'You: ') + m.text).join('\n\n')}${thread.length ? '\n\n' : ''}Owner: ${q}\n\nYou:`;
+export const aiPrompt = (ctx: string, thread: AiMsg[], q: string, manual: { name: string; page: number; text: string }[] = []) =>
+  `--- CAR AND TASK ---\n${ctx}\n--- END ---\n\n${manual.length ? `--- WORKSHOP MANUAL EXCERPTS ---\nThe owner uploaded the workshop manual for this car. Base guides, specs and procedures on these excerpts first and cite them like (Manual p.12). Only fall back to general knowledge where they do not cover it, and say so.\n\n${manual.map(x => `[${x.name} p.${x.page}]\n${x.text}`).join('\n\n')}\n--- END MANUAL ---\n\n` : ''}${thread.map(m => (m.role === 'user' ? 'Owner: ' : 'You: ') + m.text).join('\n\n')}${thread.length ? '\n\n' : ''}Owner: ${q}\n\nYou:`;
