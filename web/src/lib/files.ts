@@ -32,4 +32,4 @@ export async function upload(file: File, maxPx = 1800): Promise<FileRef> {
   return j as FileRef;
 }
 
-export const fmtSize = (n: number) => (!n ? '' : n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+export { fmtSize } from './model.ts';
