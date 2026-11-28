@@ -37,7 +37,7 @@ const PORT = +(process.env.PORT || 3000);
 const DATA_DIR = resolve(process.env.DATA_DIR || join(here, '..', 'data'));
 const STATIC_DIR = resolve(process.env.STATIC_DIR || join(here, '..', 'web', 'dist'));
 const MAX_BODY = 5 * 1024 * 1024;
-const MAX_FILE = 25 * 1024 * 1024;
+const MAX_FILE = 100 * 1024 * 1024; // workshop manuals run large
 // Served inline; anything else downloads, so an uploaded HTML or SVG file can never run as a page.
 const INLINE = /^(image\/(jpeg|png|gif|webp)|application\/pdf)$/;
 const COOKIE = 'garage_session';
@@ -402,7 +402,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
     return send(res, 404, { error: 'Not found' });
   }
 
-  const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
+  const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.woff2': 'font/woff2', '.woff': 'font/woff', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };
   async function file(req, res, path) {
     let p = normalize(join(STATIC_DIR, decodeURIComponent(path)));
     if (p !== STATIC_DIR && !p.startsWith(STATIC_DIR + sep)) { res.writeHead(403); return res.end(); }

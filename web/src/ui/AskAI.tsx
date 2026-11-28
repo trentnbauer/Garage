@@ -4,6 +4,7 @@ import type { CardForm } from '../lib/actions.ts';
 import { AI0, AI_PROV, AI_QUICK, aiContext, type AiMsg, aiPrompt } from '../lib/ai.ts';
 import type { Calc } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
+import { excerpts, refsLine } from '../lib/manual.ts';
 import { Icon } from './icons.tsx';
 
 const info = <svg className="i" viewBox="0 0 24 24" width={14} height={14} aria-hidden="true"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>;
@@ -20,12 +21,13 @@ export function AskAI({ calc, store, vid, form, onSave, onClose }: { calc: Calc;
     const q = (q0 ?? prompt).trim(); if (!q || busy) return;
     const before = thread;
     setThread([...before, { role: 'user', text: q }]); setPrompt(''); setBusy(true); setErr('');
-    const r = await store.ai(aiPrompt(ctx, before, q));
+    const ex = cfg.shareManual ? await excerpts(v, form.title + ' ' + q).catch(() => []) : [];
+    const r = await store.ai(aiPrompt(ctx, before, q, ex));
     setBusy(false);
-    if (r.error) setErr(r.error); else setThread(t => [...t, { role: 'ai', text: (r.text || '').replace(/\*\*/g, '').trim() }]);
+    if (r.error) setErr(r.error); else setThread(t => [...t, { role: 'ai', text: (r.text || '').replace(/\*\*/g, '').trim(), refs: refsLine(ex) }]);
   };
   const save = (i: number) => { const m = thread[i]; if (m.saved) return; onSave('AI suggestion\n' + m.text); setThread(t => t.map((x, j) => (j === i ? { ...x, saved: true } : x))); };
-  const manual = !cfg.shareManual ? 'Workshop manual lookup is off in Admin settings' : 'No workshop manual for this car yet — add one in Car details and AI will use it first';
+  const ms = v.manuals || [], manual = !cfg.shareManual ? 'Workshop manual lookup is off in Admin settings' : ms.length ? `Checks ${ms.map(m => m.name.replace(/\.[a-z0-9]+$/i, '')).join(', ')} first` : 'No workshop manual for this car yet — add one in Car details and AI will use it first';
   const can = !!prompt.trim() && !busy;
 
   return (
@@ -50,6 +52,7 @@ export function AskAI({ calc, store, vid, form, onSave, onClose }: { calc: Calc;
           ? <div key={i} style={{ alignSelf: 'flex-end', maxWidth: '85%', background: 'var(--accs)', borderRadius: '14px 14px 4px 14px', padding: '10px 14px', fontSize: 14, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{m.text}</div>
           : <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'var(--card2)', border: '1px solid var(--line)', borderRadius: '4px 14px 14px 14px', padding: '12px 14px' }}>
               <div style={{ fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text}</div>
+              {m.refs && <span className="mono mut" style={{ fontSize: 11 }}>{m.refs}</span>}
               <button type="button" className="plain" onClick={() => save(i)} style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 500, color: m.saved ? 'var(--up)' : 'var(--acc)' }}>{m.saved ? 'Saved to task notes' : 'Save to task notes'}</button>
             </div>)}
         {busy && <div role="status" style={{ fontSize: 13, color: 'var(--mut)' }}>Thinking…</div>}

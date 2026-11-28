@@ -16,13 +16,14 @@ import { Details } from './Details.tsx';
 import { Specs } from './Specs.tsx';
 import { Parts } from './Parts.tsx';
 import { Photos } from './Photos.tsx';
+import { Manual } from './Manual.tsx';
 
 export type Tab = { calc: Calc; car: Vehicle; nav: Nav; store: Store; me: User };
 
 const NAV: [Sec, string, IconName, string][] = [
   ['overview', 'Overview', 'grid', 'Overview'], ['details', 'Details', 'car', 'Car details'], ['specs', 'Specs', 'ruler', 'Specs'],
   ['board', 'Board', 'board', 'Build board'], ['photos', 'Photos', 'image', 'Build photos'], ['history', 'History', 'wrench', 'Service history'],
-  ['fuel', 'Fuel', 'fuel', 'Fuel log'], ['reminders', 'Reminders', 'bell', 'Reminders'], ['parts', 'Parts', 'box', 'Parts'], ['notes', 'Notes', 'notes', 'Notes'],
+  ['fuel', 'Fuel', 'fuel', 'Fuel log'], ['reminders', 'Reminders', 'bell', 'Reminders'], ['parts', 'Parts', 'box', 'Parts'], ['notes', 'Notes', 'notes', 'Notes'], ['manual', 'Manual', 'book', 'Workshop manual'],
 ];
 const TABS: [Sec, string][] = [['overview', 'Overview'], ['board', 'Board'], ['fuel', 'Fuel'], ['reminders', 'Due']];
 
@@ -60,7 +61,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
       <div className="frame" style={{ display: 'flex', overflow: 'clip' }}>
         <nav className="noscroll" aria-label="Car sections" style={{ width: 88, flex: 'none', borderRight: '1px solid var(--line)', display: narrow ? 'none' : 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '16px 0', height: '100%', overflowY: 'auto', background: 'var(--bg)' }}>
           <button className="plain" onClick={() => nav.go({ view: 'home' })} title="Back to garage" style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--acc)', color: 'var(--accfg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 14, marginBottom: 14 }}>G</button>
-          {NAV.map(([k, label, ic, title]) => (
+          {NAV.filter(([k]) => k !== 'manual' || (car.manuals || []).length).map(([k, label, ic, title]) => (
             <button key={k} className={'nav-i' + (sec === k ? ' on' : '')} onClick={() => nav.go({ sec: k })} title={title} aria-current={sec === k ? 'page' : undefined}>
               <Icon n={ic} s={k === 'overview' ? 20 : 18} /><span>{label}</span>
             </button>
@@ -135,6 +136,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
             : sec === 'specs' ? <Specs {...tab} />
             : sec === 'parts' ? <Parts {...tab} />
             : sec === 'photos' ? <Photos {...tab} />
+            : sec === 'manual' ? <Manual {...tab} />
             : <div className="card" style={{ alignItems: 'flex-start', gap: 6 }}><span className="card-t">{SECS[sec]}</span><span className="mut" style={{ fontSize: 13 }}>This section isn’t built yet. It’s coming in the next updates.</span></div>}
         </div>
       </div>
