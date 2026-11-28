@@ -9,7 +9,9 @@
 //   POST /api/login/totp     { ticket, code } second step when the profile has an authenticator app
 //   POST /api/me             { name?, color? }       POST|DELETE /api/pin { pin }
 //   POST /api/totp/start → { secret, uri }; POST /api/totp/verify { code }; DELETE /api/totp
-//   PUT  /api/admin/auth { signins?, tfaTotp?, tfaRequire? }; POST /api/admin/users { name, role };
+//   Passkeys: POST /api/passkeys/options, POST /api/passkeys { response, name }, DELETE /api/passkeys/:id (your own);
+//   POST /api/passkey/login/options { ticket? }, POST /api/passkey/login { response, ticket? }
+//   PUT  /api/admin/auth { signins?, tfaTotp?, tfaPasskey?, tfaRequire? }; POST /api/admin/users { name, role };
 //   PATCH /api/admin/users/:id { role?, removed?, resetPin? }   (admins only)
 //   PUT  /api/admin/ai {…, apiKey?: string|null}; POST /api/admin/ai/test
 //   PUT  /api/admin/smtp {…, pass?: string|null}; POST /api/admin/smtp/test { to }
@@ -31,6 +33,7 @@ import { applyTunnel, hostOf, runner } from './tunnel.js';
 import { fromEnv, lockedVars, lockOf, toEnv } from './env.js';
 import { fromApi, fromVolume } from './lube.js';
 import { createMailer } from './mailer.js';
+import { createPasskeys } from './passkeys.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const PORT = +(process.env.PORT || 3000);
@@ -60,7 +63,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
   const locked = id => { const f = fails.get(id); return f && f.n >= 5 && Date.now() - f.at < 60_000; };
   const failed = id => { const f = fails.get(id); fails.set(id, { n: f && Date.now() - f.at < 60_000 ? f.n + 1 : 1, at: Date.now() }); };
 
-  const AUTH0 = { signins: false, tfaTotp: true, tfaRequire: 'off' };
+  const AUTH0 = { signins: false, tfaTotp: true, tfaPasskey: true, tfaRequire: 'off' };
   // Admin-set integrations. Their secrets (API key, SMTP password) live under their own keys and are never sent out.
   const AI0 = { enabled: false, provider: 'anthropic', model: '', baseUrl: '', shareSpecs: true, shareHistory: true, shareNotes: false, shareManual: true };
   const SMTP0 = { enabled: false, host: '', port: 587, security: 'starttls', user: '', fromName: 'Garage', fromAddr: '', replyTo: '', to: '', digest: 'weekly', overdue: true, blockers: true, summary: false, signin: true };
@@ -86,9 +89,13 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
   const auth = () => ({ ...AUTH0, ...db.read('auth', {}) });
   // TOTP secrets live under their own keys, never in the state sent to browsers.
   const totpOf = id => db.read('totp:' + id, '');
+  // Passkeys too: public keys aren't secret, but they stay out of the garage data like other sign-in details.
+  const keysOf = id => db.read('passkeys:' + id, null) || [];
+  const pk = createPasskeys({ keys: keysOf, setKeys: (id, l) => db.write({ ['passkeys:' + id]: l }), allKeys: () => db.read('users', []).filter(u => !u.removed).flatMap(u => keysOf(u.id).map(k => [u.id, k])) });
+  const has2 = id => { const a = auth(); return !!((a.tfaTotp && totpOf(id)) || (a.tfaPasskey && keysOf(id).length)); };
   const state = () => {
     const g = Object.fromEntries(DATA_KEYS.map(k => [k, db.read(k, null)]));
-    g.users = db.read('users', []).map(u => ({ ...u, hasPin: db.hasPin(u.id), hasTotp: !!totpOf(u.id) }));
+    g.users = db.read('users', []).map(u => ({ ...u, hasPin: db.hasPin(u.id), hasTotp: !!totpOf(u.id), passkeys: keysOf(u.id).map(k => ({ id: k.id, name: k.name, at: k.at })) }));
     g.auth = auth();
     g.ai = { ...aiCfg(), hasKey: !!db.read('secret:aiKey', '') };
     g.smtp = { ...smtpCfg(), hasPass: !!db.read('secret:smtpPass', '') };
@@ -166,7 +173,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         db.setPin(u.id, hashPin(b.newPin));
       }
       fails.delete(u.id);
-      if (secret) { const t = randomBytes(24).toString('hex'); tickets.set(t, { id: u.id, at: Date.now() }); return send(res, 200, { tfa: true, ticket: t }); }
+      if (has2(u.id)) { const t = randomBytes(24).toString('hex'); tickets.set(t, { id: u.id, at: Date.now() }); return send(res, 200, { tfa: true, ticket: t, totp: !!secret, passkey: !!(a.tfaPasskey && keysOf(u.id).length) }); }
       return send(res, 200, { me: u.id }, startSession(res, u.id, req));
     }
 
@@ -179,10 +186,25 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
       return send(res, 200, { me: t.id }, startSession(res, t.id, req));
     }
 
+    if (path === '/api/passkey/login/options' && req.method === 'POST') {
+      if (!auth().tfaPasskey) return send(res, 400, { error: 'Passkeys are off. Ask an admin.' });
+      const b = await body(req), t = b.ticket ? tickets.get(String(b.ticket)) : null;
+      if (b.ticket && (!t || Date.now() - t.at > 300_000)) return send(res, 401, { error: 'That took too long. Sign in again.' });
+      return send(res, 200, await pk.loginOptions(req, t?.id));
+    }
+    if (path === '/api/passkey/login' && req.method === 'POST') {
+      if (!auth().tfaPasskey) return send(res, 400, { error: 'Passkeys are off. Ask an admin.' });
+      const b = await body(req);
+      let uid; try { uid = await pk.login(b.response, req); } catch (e) { return send(res, 401, { error: e.message }); }
+      if (b.ticket) { const t = tickets.get(String(b.ticket)); if (!t || t.id !== uid) return send(res, 401, { error: 'That passkey is for someone else.' }); tickets.delete(String(b.ticket)); }
+      fails.delete(uid);
+      return send(res, 200, { me: uid }, startSession(res, uid, req)); // a passkey is something you have, unlocked on your device: a full sign-in
+    }
+
     if (path === '/api/logout' && req.method === 'POST') { const t = token(req); if (t) db.dropSession(t); return send(res, 200, {}, { 'set-cookie': `${COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` }); }
 
     // ---- your own account ----
-    if (['/api/me', '/api/pin', '/api/totp', '/api/totp/start', '/api/totp/verify'].includes(path)) {
+    if (['/api/me', '/api/pin', '/api/totp', '/api/totp/start', '/api/totp/verify', '/api/passkeys', '/api/passkeys/options'].includes(path) || path.startsWith('/api/passkeys/')) {
       const me = userOf(req);
       if (!me) return send(res, 401, { error: 'Sign in first.' });
       const b = req.method === 'DELETE' ? {} : await body(req), users = db.read('users', []), a = auth();
@@ -212,8 +234,21 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         return send(res, 200, {});
       }
       if (path === '/api/totp' && req.method === 'DELETE') {
-        if (required) return send(res, 400, { error: 'Two-factor is required for you, so the authenticator app has to stay on.' });
+        if (required && !(a.tfaPasskey && keysOf(me.id).length)) return send(res, 400, { error: 'Two-factor is required for you — add a passkey before turning this off.' });
         db.write({ ['totp:' + me.id]: '' }); log(me.id, 'turned off their authenticator app');
+        return send(res, 200, {});
+      }
+      if (!a.tfaPasskey && path.startsWith('/api/passkeys') && req.method !== 'DELETE') return send(res, 400, { error: 'Passkeys are off. Ask an admin.' });
+      if (path === '/api/passkeys/options' && req.method === 'POST') return send(res, 200, await pk.registerOptions(me, req));
+      if (path === '/api/passkeys' && req.method === 'POST') {
+        try { const k = await pk.register(me, b.response, b.name, req); log(me.id, `added a passkey (${k.name})`); return send(res, 200, { id: k.id }); }
+        catch (e) { return send(res, 400, { error: e.message }); }
+      }
+      const km = path.match(/^\/api\/passkeys\/([\w-]{1,512})$/);
+      if (km && req.method === 'DELETE') {
+        const left = keysOf(me.id).filter(k => k.id !== km[1]);
+        if (required && !left.length && !(a.tfaTotp && totpOf(me.id))) return send(res, 400, { error: 'Two-factor is required for you — set up an authenticator app before removing your last passkey.' });
+        db.write({ ['passkeys:' + me.id]: left }); log(me.id, 'removed a passkey');
         return send(res, 200, {});
       }
     }
@@ -227,10 +262,12 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         { const lk = lockedIn('auth', b); if (lk) return send(res, 400, { error: lk }); }
         const nx = { ...a };
         if (typeof b.signins === 'boolean') { if (b.signins && !db.hasPin(me.id)) return send(res, 400, { error: 'Set your own PIN first (Settings → Profile), or you’ll be locked out.' }); nx.signins = b.signins; }
-        if (typeof b.tfaTotp === 'boolean') { nx.tfaTotp = b.tfaTotp; if (!b.tfaTotp) nx.tfaRequire = 'off'; }
-        if (['off', 'admins', 'all'].includes(b.tfaRequire)) { if (b.tfaRequire !== 'off' && !nx.tfaTotp) return send(res, 400, { error: 'Turn on authenticator apps first.' }); nx.tfaRequire = b.tfaRequire; }
+        if (typeof b.tfaTotp === 'boolean') nx.tfaTotp = b.tfaTotp;
+        if (typeof b.tfaPasskey === 'boolean') nx.tfaPasskey = b.tfaPasskey;
+        if (!nx.tfaTotp && !nx.tfaPasskey) nx.tfaRequire = 'off';
+        if (['off', 'admins', 'all'].includes(b.tfaRequire)) { if (b.tfaRequire !== 'off' && !nx.tfaTotp && !nx.tfaPasskey) return send(res, 400, { error: 'Turn on authenticator apps or passkeys first.' }); nx.tfaRequire = b.tfaRequire; }
         db.write({ auth: nx });
-        const what = Object.keys(b).map(k => k === 'signins' ? `turned ${nx.signins ? 'on' : 'off'} sign-ins` : k === 'tfaTotp' ? `turned ${nx.tfaTotp ? 'on' : 'off'} authenticator apps` : `set two-factor to ${({ off: 'optional', admins: 'admins', all: 'everyone' })[nx.tfaRequire]}`).join(', ');
+        const what = Object.keys(b).map(k => k === 'signins' ? `turned ${nx.signins ? 'on' : 'off'} sign-ins` : k === 'tfaTotp' ? `turned ${nx.tfaTotp ? 'on' : 'off'} authenticator apps` : k === 'tfaPasskey' ? `turned ${nx.tfaPasskey ? 'on' : 'off'} passkeys` : `set two-factor to ${({ off: 'optional', admins: 'admins', all: 'everyone' })[nx.tfaRequire]}`).join(', ');
         if (what) log(me.id, what);
         return send(res, 200, { auth: nx });
       }
@@ -252,7 +289,7 @@ export function createApp(db, dataDir = DATA_DIR, { tunnel = runner(), cfFetch, 
         const patch = {};
         if (b.role === 'admin' || b.role === 'member') patch.role = b.role;
         if (b.removed) patch.removed = true;
-        if (b.resetPin) { db.clearPin(u.id); db.write({ ['totp:' + u.id]: '' }); }
+        if (b.resetPin) { db.clearPin(u.id); db.write({ ['totp:' + u.id]: '', ['passkeys:' + u.id]: [] }); }
         if (Object.keys(patch).length) db.write({ users: users.map(x => (x.id === u.id ? { ...x, ...patch } : x)), version: version() + 1 });
         log(me.id, b.removed ? `removed ${u.name}` : b.resetPin ? `reset ${u.name}’s PIN and two-factor` : `made ${u.name} ${patch.role === 'admin' ? 'an admin' : 'a member'}`);
         return send(res, 200, {});

@@ -8,6 +8,7 @@ export const VARS = [
   ['GARAGE_CURRENCY', 'settings', 'currency', 'str'],
   ['AUTH_SIGNINS', 'auth', 'signins', 'bool'],
   ['AUTH_TOTP', 'auth', 'tfaTotp', 'bool'],
+  ['AUTH_PASSKEYS', 'auth', 'tfaPasskey', 'bool'],
   ['AUTH_2FA_REQUIRED', 'auth', 'tfaRequire', 'enum', ['off', 'admins', 'all']],
   ['AI_ENABLED', 'ai', 'enabled', 'bool'],
   ['AI_PROVIDER', 'ai', 'provider', 'enum', ['anthropic', 'openai', 'ollama']],

@@ -1,6 +1,7 @@
 import { type ChangeEvent, type FormEvent, useState } from 'react';
 import type { Nav } from '../App.tsx';
-import { buildIcs, type Calc, download, type Garage, type Settings as S, today, type User } from '../lib/model.ts';
+import { buildIcs, type Calc, download, fdate, type Garage, has2fa, type Settings as S, today, type User } from '../lib/model.ts';
+import { addPasskey, pkError } from '../lib/passkey.ts';
 import { seed } from '../lib/seed.ts';
 import type { Store } from '../lib/store.ts';
 import { Icon } from '../ui/icons.tsx';
@@ -29,7 +30,9 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
   const [dataMsg, setDataMsg] = useState(''), [resetTxt, setResetTxt] = useState('');
   const setS = (p: Partial<S>) => store.update(g2 => ({ ...g2, settings: { ...g2.settings, ...p } }));
   const required = a.tfaRequire === 'all' || (a.tfaRequire === 'admins' && me.role === 'admin');
-  const needPin = me.role === 'admin' || a.signins;
+  const needPin = me.role === 'admin' || a.signins, has2 = has2fa(me, a), pks = me.passkeys || [];
+  const pkAdd = async () => { setTfaMsg(null); try { await addPasskey(); await store.api('GET', '/api/state'); setTfaMsg({ t: 'Passkey added.', ok: true }); } catch (e) { setTfaMsg({ t: pkError(e), ok: false }); } };
+  const pkRemove = (k: { id: string; name: string }) => nav.ask({ title: 'Remove this passkey?', body: `“${k.name}” won’t sign you in any more.`, label: 'Remove', fn: async () => { const r = await store.api('DELETE', '/api/passkeys/' + encodeURIComponent(k.id)); setTfaMsg(r.ok ? null : { t: r.json.error || '', ok: false }); } });
 
   const saveName = () => { const n = name.trim(); if (n && n !== me.name) store.api('POST', '/api/me', { name: n }); };
   const savePin = async () => {
@@ -93,12 +96,12 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
             </div>
           </div>
 
-          {a.tfaTotp !== false && (
-            <div style={{ ...card, gap: 14, borderColor: nag && !me.hasTotp ? '#e8b04b' : 'var(--line)' }}>
+          {(a.tfaTotp !== false || a.tfaPasskey !== false) && (
+            <div style={{ ...card, gap: 14, borderColor: nag && !has2 ? '#e8b04b' : 'var(--line)' }}>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}><span className="card-t">Two-factor sign-in</span>
-                {(() => { const [t, c] = me.hasTotp ? ['On', '#3fcf8e'] : required ? ['Required', '#e8b04b'] : ['Off', '#8d9099']; return <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: c + '22', color: c }}>{t}</span>; })()}</div>
-              {required && !me.hasTotp && <div style={{ fontSize: 13, lineHeight: 1.5, padding: '10px 12px', borderRadius: 12, background: 'rgba(232,176,75,.12)', color: '#e8b04b' }}>An admin requires two-factor for your account. Set up an authenticator app below to carry on.</div>}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                {(() => { const [t, c] = has2 ? ['On', '#3fcf8e'] : required ? ['Required', '#e8b04b'] : ['Off', '#8d9099']; return <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: c + '22', color: c }}>{t}</span>; })()}</div>
+              {required && !has2 && <div style={{ fontSize: 13, lineHeight: 1.5, padding: '10px 12px', borderRadius: 12, background: 'rgba(232,176,75,.12)', color: '#e8b04b' }}>An admin requires two-factor for your account. Set up an authenticator app or a passkey below to carry on.</div>}
+              {a.tfaTotp !== false && <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}><div style={{ fontSize: 14 }}>Authenticator app</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>{me.hasTotp ? 'On — you’ll be asked for a 6-digit code after signing in.' : 'A 6-digit code from an app on your phone.'}</div></div>
                   {me.hasTotp && !setup && <button type="button" className="btn" onClick={totpOff}>Turn off</button>}
@@ -120,7 +123,14 @@ export function Settings({ store, me, calc, nav, narrow, nag }: { store: Store; 
                     </div>
                   </form>
                 )}
-              </div>
+              </div>}
+              {a.tfaPasskey !== false && <div style={{ display: 'flex', flexDirection: 'column', paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', paddingBottom: pks.length ? 8 : 0 }}>
+                  <div style={{ minWidth: 0 }}><div style={{ fontSize: 14 }}>Passkeys</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>Face ID, Touch ID, Windows Hello or a security key. Signs you in without a password.</div></div>
+                  <button type="button" className="btn-p" onClick={pkAdd}><Icon n="lock" s={15} />{pks.length ? 'Add another' : 'Add a passkey'}</button>
+                </div>
+                {pks.map(k => <div key={k.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid var(--line)', fontSize: 13 }}><span className="mut"><Icon n="lock" s={15} /></span><span style={{ flex: 1, minWidth: 0 }}>{k.name} <span className="mut" style={{ fontSize: 12 }}>· added {fdate(k.at.slice(0, 10))}</span></span><button type="button" className="plain ghost-del" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => pkRemove(k)}>Remove</button></div>)}
+              </div>}
               {msg(tfaMsg)}
             </div>
           )}

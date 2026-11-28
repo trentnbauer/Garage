@@ -1,6 +1,6 @@
 import { type FormEvent, type ReactNode, useState } from 'react';
 import type { Nav } from '../App.tsx';
-import type { Calc, User } from '../lib/model.ts';
+import { type Calc, has2fa, type User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
 import { EnvTab } from './AdminEnv.tsx';
 import { AiTab, aiStatus, EmailTab, Locked, smtpStatus } from './AdminMail.tsx';
@@ -25,7 +25,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
   const setAuth = async (p: Record<string, unknown>) => { const r = await store.api('PUT', '/api/admin/auth', p); setMsg(r.ok ? '' : r.json.error || ''); };
   const patch = async (id: string, p: Record<string, unknown>) => { const r = await store.api('PATCH', `/api/admin/users/${id}`, p); setPMsg(r.ok ? '' : r.json.error || ''); };
   const invite = async (e: FormEvent) => { e.preventDefault(); if (!inv.name.trim()) return; const r = await store.api('POST', '/api/admin/users', inv); if (r.ok) { setInv({ name: '', role: 'member' }); setInvMsg(`${inv.name.trim()} can now pick their profile on the sign-in screen and create a PIN.`); } else setInvMsg(r.json.error || ''); };
-  const totpOn = a.tfaTotp !== false, req = a.tfaRequire || 'off';
+  const totpOn = a.tfaTotp !== false, pkOn = a.tfaPasskey !== false, req = a.tfaRequire || 'off';
   const badge = (t: string, c: string) => ({ t, bg: c + '22', fg: c });
   const tabs: [TabKey, string, { t: string; bg: string; fg: string } | null][] = [
     ['access', 'Sign-in', null], ['people', 'People & roles', badge(String(users.length), '#8d9099')], ['ai', 'AI help', badge(...aiStatus(g))], ['email', 'Email (SMTP)', badge(...smtpStatus(g))],
@@ -62,11 +62,12 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
               <div style={card}>
                 <div><div className="card-t">Two-factor</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>A second step after a PIN. People set it up in Settings → Two-factor sign-in.</div></div>
                 <Row label="Authenticator apps (TOTP)" hint="6-digit codes from Google Authenticator, 1Password, Authy and others."><Toggle on={totpOn} label="Authenticator apps (TOTP)" onClick={() => setAuth({ tfaTotp: !totpOn })} /></Row>
+                <Row label="Passkeys" hint="Face ID, Touch ID, Windows Hello or a security key. Also lets people sign in without a password."><Toggle on={pkOn} label="Passkeys" onClick={() => setAuth({ tfaPasskey: !pkOn })} /></Row>
                 <Row label="Require two-factor" hint={req === 'off' ? 'People can turn it on for themselves.' : 'Anyone covered who hasn’t set it up is sent to Settings to do it straight after signing in.'}>
                   <Seg value={req} opts={[['off', 'Optional'], ['admins', 'Admins'], ['all', 'Everyone']]} onPick={v => setAuth({ tfaRequire: v })} />
                 </Row>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {users.map(u => { const need = req === 'all' || (req === 'admins' && u.role === 'admin'), on = totpOn && u.hasTotp; return (
+                  {users.map(u => { const need = req === 'all' || (req === 'admins' && u.role === 'admin'), on = has2fa(u, a); return (
                     <div key={u.id} className="row" style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, padding: '6px 0' }}><span>{u.name}{u.role === 'admin' ? ' · Admin' : ''}</span><span style={{ fontSize: 12, color: on ? 'var(--up)' : need ? '#e8b04b' : 'var(--mut)' }}>{on ? 'App' : need ? 'Not set up — required' : 'Not set up'}</span></div>); })}
                 </div>
               </div>
@@ -80,7 +81,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
                     <span style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: u.color, color: '#0d0e10', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{u.name[0]?.toUpperCase()}</span>
                     <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontWeight: 500 }}>{u.name} {u.id === me.id && <span style={{ fontSize: 11, color: 'var(--acc)' }}>You</span>}</div><div className="mono mut" style={{ fontSize: 11 }}>{[u.hasPin ? 'PIN' : 'No PIN yet', u.hasTotp ? 'authenticator app' : ''].filter(Boolean).join(' · ')}</div></div>
                     <select aria-label={`Role for ${u.name}`} value={u.role} disabled={lastAdmin} title={lastAdmin ? 'Garage needs at least one admin' : 'Role'} onChange={e => patch(u.id, { role: e.target.value })} style={{ height: 36, opacity: lastAdmin ? 0.5 : 1, borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--card2)', color: 'var(--fg)', padding: '0 8px', fontSize: 13 }}><option value="admin">Admin</option><option value="member">Member</option></select>
-                    {u.id !== me.id && (u.hasPin || u.hasTotp) && <button className="plain to-fg" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Reset ${u.name}’s sign-in?`, body: 'Their PIN and authenticator app are cleared. They create a new PIN the next time they sign in.', label: 'Reset sign-in', fn: () => patch(u.id, { resetPin: true }) })}>Reset sign-in</button>}
+                    {u.id !== me.id && (u.hasPin || u.hasTotp || !!u.passkeys?.length) && <button className="plain to-fg" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Reset ${u.name}’s sign-in?`, body: 'Their PIN and authenticator app are cleared. They create a new PIN the next time they sign in.', label: 'Reset sign-in', fn: () => patch(u.id, { resetPin: true }) })}>Reset sign-in</button>}
                     {u.id !== me.id && !lastAdmin && <button className="plain ghost-del" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Remove ${u.name}?`, body: 'They can no longer sign in. Their history entries keep their name.', label: 'Remove', fn: () => patch(u.id, { removed: true }) })}>Remove</button>}
                   </div>); })}
                 {pMsg && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{pMsg}</span>}
