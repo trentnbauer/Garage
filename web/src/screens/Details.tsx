@@ -3,6 +3,7 @@ import { download, fdate, FUELS, fuelSys, syncRego, today, type Vehicle } from '
 import { fmtSize, upload } from '../lib/files.ts';
 import { track } from '../lib/actions.ts';
 import { Icon } from '../ui/icons.tsx';
+import { Paperwork } from '../ui/Paperwork.tsx';
 import type { Tab } from './Car.tsx';
 
 type Field = { label: string; k: keyof Vehicle; num?: boolean; mono?: boolean; wide?: boolean; type?: string; ph?: string; options?: (string | [string | number, string])[]; noBlank?: boolean; def?: string | number };
@@ -11,7 +12,7 @@ const card = { breakInside: 'avoid' as const, marginBottom: 12, background: 'var
 
 export function Details({ calc, car, nav, store, me }: Tab) {
   const g = calc.g, u = calc.u, vid = car.id;
-  const [photoMsg, setPhotoMsg] = useState(''), [docMsg, setDocMsg] = useState('');
+  const [photoMsg, setPhotoMsg] = useState(''), [docMsg, setDocMsg] = useState(''), [pw, setPw] = useState(false);
   const setCar = (p: Partial<Vehicle>, rego = false) => store.update(g2 => { const vehicles = g2.vehicles.map(x => (x.id === vid ? { ...x, ...p } : x)); return rego ? { ...g2, vehicles, reminders: syncRego(vehicles, g2.reminders) } : { ...g2, vehicles }; });
   const onField = (f: Field) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const raw = e.target.value, val = f.num ? (raw === '' ? '' : +raw) : raw;
@@ -109,11 +110,12 @@ export function Details({ calc, car, nav, store, me }: Tab) {
     <div style={{ background: 'var(--card)', border: '1px solid rgba(242,104,95,.25)', borderRadius: 20, padding: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
       <div><div className="card-t">Sold it, or remove it</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>Mark as sold to archive the car and keep its history. Delete removes everything — export a backup first.</div></div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button className="btn" onClick={nav.soon}>Export paperwork</button>
+        <button className="btn" onClick={() => setPw(true)}>Export paperwork</button>
         <button className="btn" onClick={backup}>Export backup</button>
         <button className="btn" onClick={car.sold ? unsell : () => nav.open({ kind: 'sell', vid, form: { date: today(), price: '', to: '' } })} style={{ borderColor: 'var(--acc)' }}>{car.sold ? 'Undo sale' : 'Mark as sold'}</button>
         <button className="plain" onClick={removeCar} style={{ height: 36, padding: '0 14px', borderRadius: 999, background: 'rgba(242,104,95,.14)', color: 'var(--down)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center' }}>Remove car</button>
       </div>
     </div>
+    {pw && <Paperwork calc={calc} car={car} store={store} me={me.id} seller0={me.name !== 'You' ? me.name : ''} onClose={() => setPw(false)} />}
   </>;
 }

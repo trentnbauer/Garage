@@ -382,3 +382,5 @@ export function buildIcs(c: Calc) {
     ...ev.flatMap(([id, d, t, desc]) => ['BEGIN:VEVENT', 'UID:' + id + '@garage', 'DTSTAMP:' + stamp, 'DTSTART;VALUE=DATE:' + d8(d), 'DTEND;VALUE=DATE:' + d8(addDays(d, 1)), 'SUMMARY:' + esc(t), 'DESCRIPTION:' + esc(desc), 'BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + esc(t), 'TRIGGER:-P1D', 'END:VALARM', 'END:VEVENT']),
     'END:VCALENDAR'].join('\r\n') + '\r\n';
 }
+
+export const fmtSize = (n: number) => (!n ? '' : n < 1024 ? n + ' B' : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
