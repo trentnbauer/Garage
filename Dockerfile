@@ -14,6 +14,8 @@ COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --omit=dev
 COPY server/ ./server/
 COPY --from=web /app/web/dist ./web/dist
+# The server's emails use the app's reminder logic straight from its source (Node 22.18+ runs TypeScript files).
+COPY web/src/lib/model.ts ./web/src/lib/model.ts
 # cloudflared for the Cloudflare tunnel (Admin settings). It's a static binary; the image picks the right architecture.
 # shortcut: follows cloudflared's latest release, pin a tag here if a release ever breaks the tunnel.
 COPY --from=cloudflare/cloudflared:latest /usr/local/bin/cloudflared /usr/local/bin/cloudflared
