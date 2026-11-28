@@ -97,3 +97,4 @@ svg.i { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round
 .dashed { all: unset; box-sizing: content-box; cursor: pointer; border: 1px dashed var(--line2); color: var(--mut); }
 .dashed:hover { color: var(--fg); border-color: var(--mut); }
 .fill-big:hover { background: #f0bf60; }
+.drop:hover { color: var(--fg) !important; border-color: var(--mut) !important; }

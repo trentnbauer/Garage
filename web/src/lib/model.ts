@@ -41,7 +41,7 @@ export interface Activity { id: string; at: string; kind: 'event' | 'note'; text
 export interface Task {
   id: string; title: string; type: string; priority: 'High' | 'Medium' | 'Low'; est: number; labour?: number; note: string;
   drive?: Drive; assignee?: string; due?: string; photos?: { id: string; src: string; phase?: 'before' | 'after' }[];
-  files?: FileRef[]; activity?: Activity[]; createdBy?: string | null; createdAt?: string; logged?: boolean; autoRec?: string; doneAt?: string;
+  files?: FileRef[]; activity?: Activity[]; createdBy?: string | null; createdAt?: string; logged?: boolean; autoRec?: string; doneAt?: string; src?: string;
 }
 export type Board = Record<Col, Task[]>;
 
@@ -67,7 +67,7 @@ export interface Garage {
   auth: { signins: boolean; tfaTotp?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
   /** Admin-set integrations, sent by the server. Their secrets stay there: only whether one is saved. */
-  ai?: AiCfg; smtp?: SmtpCfg; tunnel?: TunCfg;
+  ai?: AiCfg; smtp?: SmtpCfg; tunnel?: TunCfg; envLocked?: string[]; // variables set in the server's environment
 }
 export type TunCfg = { enabled: boolean; accountId: string; appUrl: string; allow: string; appliedAt: string | null; error: string | null; hasToken: boolean; status: 'stopped' | 'starting' | 'connected' | 'error'; since: string | null; runError: string | null; service: string };
 export type AiCfg = { enabled: boolean; provider: 'anthropic' | 'openai' | 'ollama'; model: string; baseUrl: string; shareSpecs: boolean; shareHistory: boolean; shareNotes: boolean; shareManual: boolean; hasKey: boolean };

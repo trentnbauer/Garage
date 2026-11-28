@@ -152,3 +152,25 @@ test('Docker variables set up and run the tunnel on start', async () => {
   assert.equal(started.at(-1), 'HAND');
   db.close(); rmSync(dir, { recursive: true, force: true });
 });
+
+test('the environment wins on start, locks its fields, and exports back', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'garage-')), db = openDb(dir), fakePass = 'fixture' + process.pid; // made up per run, not a credential
+  const app = createApp(db, dir, { tunnel: { start() {}, stop() {}, state: () => ({ status: 'stopped', logs: [] }) }, env: { AI_ENABLED: 'true', AI_MODEL: 'm1', SMTP_PASSWORD: fakePass, GARAGE_UNITS: 'mi' } });
+  await new Promise(r => app.listen(0, r));
+  const base = `http://127.0.0.1:${app.address().port}`;
+  const call = async (method, path, body, cookie) => { const r = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, json: await r.json(), cookie: r.headers.get('set-cookie')?.split(';')[0] }; };
+  await call('PUT', '/api/state', { garage: { users: [{ id: 'u1', name: 'You', role: 'admin' }], settings: { units: 'km', currency: '$' } } });
+  const me = await call('POST', '/api/login', { userId: 'u1', newPin: '1234' });
+  const st = (await call('GET', '/api/state', null, me.cookie)).json;
+  assert.deepEqual([st.garage.ai.enabled, st.garage.ai.model, st.garage.smtp.hasPass, st.garage.settings.units], [true, 'm1', true, 'mi']);
+  assert.deepEqual(st.garage.envLocked, ['GARAGE_UNITS', 'AI_ENABLED', 'AI_MODEL', 'SMTP_PASSWORD']);
+  assert.match((await call('PUT', '/api/admin/ai', { model: 'other' }, me.cookie)).json.error, /AI_MODEL is set in .env/);
+  assert.match((await call('PUT', '/api/admin/smtp', { pass: null }, me.cookie)).json.error, /SMTP_PASSWORD/);
+  assert.equal((await call('PUT', '/api/admin/ai', { provider: 'ollama' }, me.cookie)).status, 200); // not locked
+  await call('PUT', '/api/state', { version: st.version, garage: { settings: { ...st.garage.settings, units: 'km' } } }, me.cookie);
+  assert.equal((await call('GET', '/api/state', null, me.cookie)).json.garage.settings.units, 'mi');
+  const ex = (await call('GET', '/api/admin/env', null, me.cookie)).json;
+  assert.match(ex.text, /^AI_PROVIDER=ollama$/m); assert.match(ex.text, /^SMTP_PASSWORD=change-me-smtp-password$/m);
+  assert.equal((await call('GET', '/api/admin/env?secrets=1', null, me.cookie)).json.text.includes(`\nSMTP_PASSWORD=${fakePass}\n`), true);
+  app.close(); db.close(); rmSync(dir, { recursive: true, force: true });
+});

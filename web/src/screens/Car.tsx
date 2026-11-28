@@ -15,6 +15,7 @@ import { Notes } from './Notes.tsx';
 import { Details } from './Details.tsx';
 import { Specs } from './Specs.tsx';
 import { Parts } from './Parts.tsx';
+import { Photos } from './Photos.tsx';
 
 export type Tab = { calc: Calc; car: Vehicle; nav: Nav; store: Store; me: User };
 
@@ -133,6 +134,7 @@ export function Car({ store, me, calc, car, nav, narrow }: { store: Store; me: U
             : sec === 'details' ? <Details {...tab} />
             : sec === 'specs' ? <Specs {...tab} />
             : sec === 'parts' ? <Parts {...tab} />
+            : sec === 'photos' ? <Photos {...tab} />
             : <div className="card" style={{ alignItems: 'flex-start', gap: 6 }}><span className="card-t">{SECS[sec]}</span><span className="mut" style={{ fontSize: 13 }}>This section isn’t built yet. It’s coming in the next updates.</span></div>}
         </div>
       </div>

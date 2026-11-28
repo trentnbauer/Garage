@@ -2,7 +2,8 @@ import { type FormEvent, type ReactNode, useState } from 'react';
 import type { Nav } from '../App.tsx';
 import type { Calc, User } from '../lib/model.ts';
 import type { Store } from '../lib/store.ts';
-import { AiTab, aiStatus, EmailTab, smtpStatus } from './AdminMail.tsx';
+import { EnvTab } from './AdminEnv.tsx';
+import { AiTab, aiStatus, EmailTab, Locked, smtpStatus } from './AdminMail.tsx';
 import { TunnelTab, tunStatus } from './AdminTunnel.tsx';
 import { Back, Seg, Toggle } from './Settings.tsx';
 
@@ -53,6 +54,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
             {tab === 'access' && <>
               <div style={card}>
                 <div><div className="card-t">Sign-in methods</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>How people get into the garage.</div></div>
+                <Locked g={g} re={/^AUTH_/} />
                 <Row label="Sign-ins enabled" hint={a.signins ? 'Everyone must sign in with a PIN or an authenticator code.' : 'Off: anyone at the sign-in screen can pick or make a profile. Admins still need a PIN. Home network only.'}><Toggle on={a.signins} label="Sign-ins enabled" onClick={() => setAuth({ signins: !a.signins })} /></Row>
                 {a.signins && <Row label="Profiles & PINs" hint="Pick a profile, then enter its PIN or an authenticator code. Profiles without a PIN create one at first sign-in."><Toggle on label="Profiles & PINs" onClick={() => {}} /></Row>}
                 {msg && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{msg}</span>}
@@ -112,9 +114,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
             {tab === 'ai' && <AiTab store={store} g={g} nav={nav} />}
             {tab === 'email' && <EmailTab store={store} g={g} me={me} nav={nav} />}
             {tab === 'tunnel' && <TunnelTab store={store} g={g} nav={nav} />}
-            {tab === 'env' && (
-              <div style={{ ...card, gap: 6 }}><span className="card-t">{tabs.find(t => t[0] === tab)![1]}</span><span className="mut" style={{ fontSize: 13 }}>This part of Admin settings isn’t built yet. It’s coming in the next update.</span></div>
-            )}
+            {tab === 'env' && <EnvTab g={g} />}
           </div>
         </div>
       </div>
