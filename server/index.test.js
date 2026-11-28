@@ -67,7 +67,7 @@ test('sign-in, saving and PIN rules', async t => {
   const gi = await fetch(base + img.src, { headers: { cookie: login.cookie } });
   assert.equal(gi.headers.get('content-type'), 'image/jpeg');
   assert.match(gi.headers.get('content-disposition'), /^inline; filename\*=UTF-8''car%20photo\.jpg/);
-  assert.equal((await up(new Uint8Array(26 * 1024 * 1024), 'image/jpeg', 'big.jpg', login.cookie).catch(() => ({ status: 413 }))).status, 413);
+  assert.equal((await up(new Uint8Array(101 * 1024 * 1024), 'image/jpeg', 'big.jpg', login.cookie).catch(() => ({ status: 413 }))).status, 413);
 
   // Admin routes are admins only; the last admin can't be demoted; sign-ins need your own PIN first.
   const alex = await call('POST', '/api/login', { userId: alexId, pin: '5555' });
