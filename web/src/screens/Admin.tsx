@@ -5,6 +5,8 @@ import type { Store } from '../lib/store.ts';
 import { EnvTab } from './AdminEnv.tsx';
 import { AiTab, aiStatus, EmailTab, Locked, smtpStatus } from './AdminMail.tsx';
 import { TunnelTab, tunStatus } from './AdminTunnel.tsx';
+import { OAuthCard, oauthProblem } from './AdminOAuth.tsx';
+import { Field } from './AdminMail.tsx';
 import { Back, Seg, Toggle } from './Settings.tsx';
 
 type TabKey = 'access' | 'people' | 'ai' | 'email' | 'tunnel' | 'log' | 'env';
@@ -20,11 +22,11 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
   const g = calc.g, a = g.auth, users = g.users.filter(u => !u.removed), admins = users.filter(u => u.role === 'admin');
   const [tab, setTab] = useState<TabKey>('access');
   const [msg, setMsg] = useState(''), [pMsg, setPMsg] = useState('');
-  const [inv, setInv] = useState({ name: '', role: 'member' }), [invMsg, setInvMsg] = useState('');
+  const [inv, setInv] = useState({ name: '', email: '', role: 'member' }), [invMsg, setInvMsg] = useState('');
   const [all, setAll] = useState(false);
   const setAuth = async (p: Record<string, unknown>) => { const r = await store.api('PUT', '/api/admin/auth', p); setMsg(r.ok ? '' : r.json.error || ''); };
   const patch = async (id: string, p: Record<string, unknown>) => { const r = await store.api('PATCH', `/api/admin/users/${id}`, p); setPMsg(r.ok ? '' : r.json.error || ''); };
-  const invite = async (e: FormEvent) => { e.preventDefault(); if (!inv.name.trim()) return; const r = await store.api('POST', '/api/admin/users', inv); if (r.ok) { setInv({ name: '', role: 'member' }); setInvMsg(`${inv.name.trim()} can now pick their profile on the sign-in screen and create a PIN.`); } else setInvMsg(r.json.error || ''); };
+  const invite = async (e: FormEvent) => { e.preventDefault(); if (!inv.name.trim()) return; const r = await store.api('POST', '/api/admin/users', inv); if (r.ok) { setInv({ name: '', email: '', role: 'member' }); setInvMsg(`${inv.name.trim()} can now pick their profile on the sign-in screen and create a PIN.`); } else setInvMsg(r.json.error || ''); };
   const totpOn = a.tfaTotp !== false, pkOn = a.tfaPasskey !== false, req = a.tfaRequire || 'off';
   const badge = (t: string, c: string) => ({ t, bg: c + '22', fg: c });
   const tabs: [TabKey, string, { t: string; bg: string; fg: string } | null][] = [
@@ -55,12 +57,13 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
               <div style={card}>
                 <div><div className="card-t">Sign-in methods</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>How people get into the garage.</div></div>
                 <Locked g={g} re={/^AUTH_/} />
-                <Row label="Sign-ins enabled" hint={a.signins ? 'Everyone must sign in with a PIN or an authenticator code.' : 'Off: anyone at the sign-in screen can pick or make a profile. Admins still need a PIN. Home network only.'}><Toggle on={a.signins} label="Sign-ins enabled" onClick={() => setAuth({ signins: !a.signins })} /></Row>
-                {a.signins && <Row label="Profiles & PINs" hint="Pick a profile, then enter its PIN or an authenticator code. Profiles without a PIN create one at first sign-in."><Toggle on label="Profiles & PINs" onClick={() => {}} /></Row>}
+                <Row label="Sign-ins enabled" hint={a.signins ? 'Everyone must sign in with a PIN, authenticator code, passkey or OAuth2.' : 'Off: anyone at the sign-in screen can pick or make a profile. Admins still need a PIN. Home network only.'}><Toggle on={a.signins} label="Sign-ins enabled" onClick={() => setAuth({ signins: !a.signins })} /></Row>
+                {a.signins && <Row label="Profiles & PINs" hint={a.google ? `Off while OAuth2 is on — everyone signs in through ${a.oName || 'your provider'}. Admins can still use their PIN if the provider is down.` : 'Pick a profile, then enter its PIN or an authenticator code. Profiles without a PIN create one at first sign-in.'}><Toggle on={!a.google} label="Profiles & PINs" onClick={() => { if (!a.google) return; setAuth({ google: false }); }} /></Row>}
+                {a.signins && <Row label="OAuth2 / OpenID Connect" hint={`Sign in through ${a.oName || 'your provider'}. Turns profiles & PINs off.`}><Toggle on={!!a.google} label="OAuth2 / OpenID Connect" onClick={() => { const pb = oauthProblem(g, me.email); if (!a.google && pb) { setMsg(pb + ', then switch OAuth2 on.'); return; } setAuth({ google: !a.google }); }} /></Row>}
                 {msg && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{msg}</span>}
               </div>
               <div style={card}>
-                <div><div className="card-t">Two-factor</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>A second step after a PIN. People set it up in Settings → Two-factor sign-in.</div></div>
+                <div><div className="card-t">Two-factor</div><div style={{ fontSize: 12, color: 'var(--mut)' }}>A second step after a PIN or OAuth2, for profiles and OAuth2 accounts alike. People set it up in Settings → Two-factor sign-in.</div></div>
                 <Row label="Authenticator apps (TOTP)" hint="6-digit codes from Google Authenticator, 1Password, Authy and others."><Toggle on={totpOn} label="Authenticator apps (TOTP)" onClick={() => setAuth({ tfaTotp: !totpOn })} /></Row>
                 <Row label="Passkeys" hint="Face ID, Touch ID, Windows Hello or a security key. Also lets people sign in without a password."><Toggle on={pkOn} label="Passkeys" onClick={() => setAuth({ tfaPasskey: !pkOn })} /></Row>
                 <Row label="Require two-factor" hint={req === 'off' ? 'People can turn it on for themselves.' : 'Anyone covered who hasn’t set it up is sent to Settings to do it straight after signing in.'}>
@@ -71,6 +74,7 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
                     <div key={u.id} className="row" style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, padding: '6px 0' }}><span>{u.name}{u.role === 'admin' ? ' · Admin' : ''}</span><span style={{ fontSize: 12, color: on ? 'var(--up)' : need ? '#e8b04b' : 'var(--mut)' }}>{on ? 'App' : need ? 'Not set up — required' : 'Not set up'}</span></div>); })}
                 </div>
               </div>
+              <OAuthCard store={store} g={g} nav={nav} myEmail={me.email} setMsg={setMsg} />
             </>}
 
             {tab === 'people' && (
@@ -79,9 +83,10 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
                 {users.map(u => { const lastAdmin = u.role === 'admin' && admins.length <= 1; return (
                   <div key={u.id} className="row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', flexWrap: 'wrap' }}>
                     <span style={{ width: 30, height: 30, flex: 'none', borderRadius: '50%', background: u.color, color: '#0d0e10', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>{u.name[0]?.toUpperCase()}</span>
-                    <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontWeight: 500 }}>{u.name} {u.id === me.id && <span style={{ fontSize: 11, color: 'var(--acc)' }}>You</span>}</div><div className="mono mut" style={{ fontSize: 11 }}>{[u.hasPin ? 'PIN' : 'No PIN yet', u.hasTotp ? 'authenticator app' : ''].filter(Boolean).join(' · ')}</div></div>
+                    <div style={{ flex: 1, minWidth: 140 }}><div style={{ fontWeight: 500 }}>{u.name} {u.id === me.id && <span style={{ fontSize: 11, color: 'var(--acc)' }}>You</span>}</div><div className="mono mut" style={{ fontSize: 11 }}>{[u.hasPin ? 'PIN' : 'No PIN yet', u.hasTotp ? 'authenticator app' : '', u.passkeys?.length ? `${u.passkeys.length} passkey${u.passkeys.length > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</div></div>
+                    <Field value={u.email || ''} type="email" aria-label={`Email for ${u.name}`} placeholder={`Email, for ${a.oName || 'OAuth2'} sign-in`} onSave={v => patch(u.id, { email: v })} style={{ flex: '1 1 200px', width: 'auto', height: 36, fontSize: 13 }} />
                     <select aria-label={`Role for ${u.name}`} value={u.role} disabled={lastAdmin} title={lastAdmin ? 'Garage needs at least one admin' : 'Role'} onChange={e => patch(u.id, { role: e.target.value })} style={{ height: 36, opacity: lastAdmin ? 0.5 : 1, borderRadius: 10, border: '1px solid var(--line2)', background: 'var(--card2)', color: 'var(--fg)', padding: '0 8px', fontSize: 13 }}><option value="admin">Admin</option><option value="member">Member</option></select>
-                    {u.id !== me.id && (u.hasPin || u.hasTotp || !!u.passkeys?.length) && <button className="plain to-fg" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Reset ${u.name}’s sign-in?`, body: 'Their PIN and authenticator app are cleared. They create a new PIN the next time they sign in.', label: 'Reset sign-in', fn: () => patch(u.id, { resetPin: true }) })}>Reset sign-in</button>}
+                    {u.id !== me.id && (u.hasPin || u.hasTotp || !!u.passkeys?.length) && <button className="plain to-fg" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Reset ${u.name}’s sign-in?`, body: 'Their PIN, authenticator app and passkeys are cleared. They create a new PIN the next time they sign in.', label: 'Reset sign-in', fn: () => patch(u.id, { resetPin: true }) })}>Reset sign-in</button>}
                     {u.id !== me.id && !lastAdmin && <button className="plain ghost-del" style={{ fontSize: 12, color: 'var(--mut)' }} onClick={() => nav.ask({ title: `Remove ${u.name}?`, body: 'They can no longer sign in. Their history entries keep their name.', label: 'Remove', fn: () => patch(u.id, { removed: true }) })}>Remove</button>}
                   </div>); })}
                 {pMsg && <span role="alert" style={{ fontSize: 12, color: 'var(--down)' }}>{pMsg}</span>}
@@ -89,10 +94,11 @@ export function Admin({ store, me, calc, nav, narrow }: { store: Store; me: User
                   <span className="label">Add someone</span>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <input aria-label="Name" className="field" placeholder="Name" value={inv.name} onChange={e => setInv({ ...inv, name: e.target.value })} style={{ flex: '1 1 140px', width: 'auto' }} />
+                    <input aria-label="Email" type="email" className="field" placeholder={`Email, for ${a.oName || 'OAuth2'} sign-in (optional)`} value={inv.email} onChange={e => setInv({ ...inv, email: e.target.value })} style={{ flex: '1 1 200px', width: 'auto' }} />
                     <select aria-label="Role" className="field" value={inv.role} onChange={e => setInv({ ...inv, role: e.target.value })} style={{ width: 'auto', flex: 'none', padding: '0 8px' }}><option value="member">Member</option><option value="admin">Admin</option></select>
                     <button type="submit" className="btn-p">Add</button>
                   </div>
-                  <span role="status" style={{ fontSize: 12, color: 'var(--mut)' }}>{invMsg || 'They get a profile on the sign-in screen and create a PIN the first time they sign in.'}</span>
+                  <span role="status" style={{ fontSize: 12, color: 'var(--mut)' }}>{invMsg || (a.google ? `With an email they sign in through ${a.oName || 'OAuth2'} and land on this profile.` : 'They get a profile on the sign-in screen and create a PIN the first time they sign in.')}</span>
                 </form>
               </div>
             )}

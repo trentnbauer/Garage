@@ -4,11 +4,11 @@ import { fromEnv, lockedVars, lockOf, toEnv } from './env.js';
 
 test('.env round trip: export, read back, same settings; secrets are placeholders unless asked', () => {
   const docs = {
-    settings: { units: 'mi', currency: '€', other: 1 }, auth: { signins: true, tfaTotp: true, tfaPasskey: true, tfaRequire: 'admins' },
+    settings: { units: 'mi', currency: '€', other: 1 }, auth: { signins: true, tfaTotp: true, tfaPasskey: true, tfaRequire: 'admins', google: true, oProvider: 'keycloak', oName: 'Home SSO', issuer: 'https://sso.example.com/realms/home', clientId: 'garage', scopes: 'openid email profile', allowed: 'me@x.com, @fam.com', googleRole: 'member' },
     ai: { enabled: true, provider: 'openai', model: 'gpt-x', baseUrl: 'http://h:1/v1', shareSpecs: true, shareHistory: false, shareNotes: true, shareManual: false },
     smtp: { enabled: true, host: 'smtp.x.com', port: 465, security: 'ssl', user: 'me', fromName: 'My Garage', fromAddr: 'g@x.com', replyTo: '', to: 'a@x.com, b@x.com', digest: 'daily', overdue: true, blockers: false, summary: true, signin: false },
     tunnel: { enabled: false, accountId: 'a'.repeat(32), appUrl: 'https://garage.x.com', allow: 'me@x.com\n@fam.com' },
-    'secret:aiKey': 'sk-1', 'secret:smtpPass': 'p w"d', 'secret:cfToken': '',
+    'secret:aiKey': 'sk-1', 'secret:smtpPass': 'p w"d', 'secret:cfToken': '', 'secret:oauthSecret': 'cs-9',
   };
   const read = (d, def) => docs[d] ?? def;
   const plain = toEnv(read).text, full = toEnv(read, { secrets: true }).text;

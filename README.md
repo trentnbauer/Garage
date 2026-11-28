@@ -2,7 +2,7 @@
 
 A self-hosted logbook for project and daily cars: service history, fill-ups, reminders, a build board, parts and paperwork, shared with whoever works on the cars with you.
 
-**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home, every car tab including workshop manuals (search, read, AI help cites them, Fill with AI for specs), build photos on tasks, the paperwork pack for selling a car, the dialogs, the Shelf and Shopping list, file uploads (car photos and documents), Settings, and Admin settings for sign-in, people, AI help, email (SMTP) and the activity log. Two-factor sign-in works with authenticator apps. Tasks have an Ask AI button once an admin turns AI help on (Anthropic, any OpenAI-compatible API, or a local Ollama). Email sends the reminder digest, overdue and new-blocker alerts, a monthly report and sign-in alerts, as chosen in Admin settings → Email. The Cloudflare tunnel is set up from Admin settings: Garage creates the tunnel, its route, the DNS record and a Cloudflare Access policy through the Cloudflare API, and runs the bundled `cloudflared`. Admin settings → Export .env writes every admin setting as environment variables. Settings → Migrate from another app imports from LubeLogger, from its mounted data folder or over its API. Passkeys, OAuth2 and the Tracktor import are still to come. Their buttons are already in place and say so when clicked.
+**Status:** being built screen by screen from the Claude Design handoff. Done so far: sign-in (profiles and PINs), the Garage home, every car tab including workshop manuals (search, read, AI help cites them, Fill with AI for specs), build photos on tasks, the paperwork pack for selling a car, the dialogs, the Shelf and Shopping list, file uploads (car photos and documents), Settings, and Admin settings for sign-in, people, AI help, email (SMTP) and the activity log. Two-factor sign-in works with authenticator apps and passkeys, and passkeys can also sign in on their own. Sign-in through OAuth2 / OpenID Connect works with Google, Microsoft, GitHub, Authentik, Authelia, Keycloak or any OIDC provider (Admin settings → Sign-in). Tasks have an Ask AI button once an admin turns AI help on (Anthropic, any OpenAI-compatible API, or a local Ollama). Email sends the reminder digest, overdue and new-blocker alerts, a monthly report and sign-in alerts, as chosen in Admin settings → Email. The Cloudflare tunnel is set up from Admin settings: Garage creates the tunnel, its route, the DNS record and a Cloudflare Access policy through the Cloudflare API, and runs the bundled `cloudflared`. Admin settings → Export .env writes every admin setting as environment variables. Settings → Migrate from another app imports from LubeLogger, from its mounted data folder or over its API. The Tracktor import is still to come. Their buttons are already in place and say so when clicked.
 
 ## Run it
 
@@ -19,7 +19,7 @@ Everything lives in `/data`: `garage.db` (SQLite) and `files/` (photos and docum
 | `PORT` | `3000` | |
 | `DATA_DIR` | `/data` | Where `garage.db` is kept |
 | `TZ` | `UTC` | Time zone for email: digests and the monthly report go out from 7am, e.g. `Australia/Melbourne` |
-| Admin settings | | Every admin setting can be set in the environment: `GARAGE_UNITS`, `AUTH_*`, `AI_*`, `SMTP_*`, `EMAIL_*`, `TUNNEL_ENABLED` and the rows below. Admin settings → Export .env writes the full list from your current settings. A variable that's set wins on every start, and its field is locked in the app |
+| Admin settings | | Every admin setting can be set in the environment: `GARAGE_UNITS`, `AUTH_*` (including `AUTH_PASSKEYS` and `AUTH_OAUTH`), `OAUTH_*`, `AI_*`, `SMTP_*`, `EMAIL_*`, `TUNNEL_ENABLED` and the rows below. Admin settings → Export .env writes the full list from your current settings. A variable that's set wins on every start, and its field is locked in the app |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | | Set up and run the Cloudflare tunnel on every start |
 | `APP_HOSTNAME` | | The address the tunnel serves, e.g. `garage.example.com` |
 | `ACCESS_EMAILS` | | Comma-separated emails or `@domains` Cloudflare Access lets in. Blank means public |
@@ -31,6 +31,12 @@ Admins open Settings → Migrate from another app. Garage shows what it found be
 
 - **Docker volume (everything):** mount LubeLogger's data folder (the one with `cartracker.db`) into Garage read-only, for example `- /path/to/lubelogger/data:/import/lubelogger:ro`, then scan `/import/lubelogger`. Garage reads the database, attachments and vehicle photos.
 - **API:** give LubeLogger's address and an API key or a username and password. Only a username and password can download attachments. Reminders come in without their repeat settings, because the API doesn't send them.
+
+### Passkeys and OAuth2
+
+Passkeys belong to the address you open Garage at, so register them there (for example the Cloudflare tunnel's App URL). They need HTTPS, or `localhost`.
+
+For OAuth2, add the redirect URI shown in Admin settings (`<your address>/api/oauth/callback`) to your provider. People sign in by email: set each person's email in People & roles, or list allowed emails and `@domains`. Admins keep their PIN as a way in if the provider is down.
 
 ## Develop
 

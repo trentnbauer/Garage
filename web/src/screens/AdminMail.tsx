@@ -44,11 +44,11 @@ export const Line = ({ label, hint, on, flip }: { label: string; hint: string; o
   </div>
 );
 /** A text field that saves when you leave it. Re-keyed on the saved value so a reload shows the server's copy. */
-const Field = ({ value, onSave, style, ...p }: { value: string; onSave: (v: string) => void; style?: CSSProperties; placeholder?: string; type?: string; 'aria-label'?: string }) => (
+export const Field = ({ value, onSave, style, ...p }: { value: string; onSave: (v: string) => void; style?: CSSProperties; placeholder?: string; type?: string; 'aria-label'?: string }) => (
   <input key={value} className="field" autoComplete="off" defaultValue={value} style={style} {...p} onBlur={e => { if (e.target.value !== value) onSave(e.target.value); }} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
 );
 /** A write-only secret: type, Save, and it's never shown again. */
-function Secret({ label, saved, ph, keep, onSave, onRemove }: { label: string; saved: boolean; ph: string; keep: string; onSave: (v: string) => Promise<boolean>; onRemove: () => void }) {
+export function Secret({ label, saved, ph, keep, onSave, onRemove }: { label: string; saved: boolean; ph: string; keep: string; onSave: (v: string) => Promise<boolean>; onRemove: () => void }) {
   const [d, setD] = useState('');
   const save = async () => { if (d.trim() && (await onSave(d))) setD(''); };
   return (

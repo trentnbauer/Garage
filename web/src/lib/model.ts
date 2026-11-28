@@ -66,7 +66,7 @@ export interface Settings {
 export interface Garage {
   vehicles: Vehicle[]; records: Rec[]; reminders: Reminder[]; parts: Part[]; boards: Record<string, Board>;
   notes: Record<string, string>; shelf: ShelfItem[]; users: User[]; settings: Settings;
-  auth: { signins: boolean; tfaTotp?: boolean; tfaPasskey?: boolean; tfaRequire?: 'off' | 'admins' | 'all' };
+  auth: { signins: boolean; tfaTotp?: boolean; tfaPasskey?: boolean; tfaRequire?: 'off' | 'admins' | 'all'; google?: boolean; oProvider?: string; oName?: string; issuer?: string; clientId?: string; scopes?: string; allowed?: string; googleRole?: 'admin' | 'member'; hasSecret?: boolean };
   log: { id: string; at: string; by: string | null; vid: string | null; text: string }[];
   /** Admin-set integrations, sent by the server. Their secrets stay there: only whether one is saved. */
   ai?: AiCfg; smtp?: SmtpCfg; tunnel?: TunCfg; envLocked?: string[]; // variables set in the server's environment
